@@ -1,7 +1,10 @@
 import os
+import logging
 import requests
 from fastapi import FastAPI, Request, HTTPException
 from openai import OpenAI
+
+logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_CHAT_ID = os.getenv("OWNER_CHAT_ID")
@@ -44,9 +47,55 @@ def analyze_post(text: str) -> str:
     )
     return (resp.output_text or "").strip()
 
+# --------------------------------------------------------------------------
+# Event HR Job Poster v3.0 — расписание и ручной запуск
+# --------------------------------------------------------------------------
+import job_poster
+
+JOB_POSTER_ENABLED = os.getenv("JOB_POSTER_ENABLED", "1") == "1"
+JOB_POSTER_TOKEN = os.getenv("JOB_POSTER_TOKEN")  # секрет для ручного триггера
+TZ = os.getenv("JOB_POSTER_TZ", "Europe/Moscow")
+PUBLISH_HOURS = [int(h) for h in os.getenv(
+    "JOB_POSTER_HOURS", "10,11,12,13,14,15,16,17,18,19,20").split(",") if h.strip()]
+
+
+@app.on_event("startup")
+def start_scheduler():
+    if not JOB_POSTER_ENABLED:
+        logging.info("Job Poster выключен (JOB_POSTER_ENABLED=0)")
+        return
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        import pytz
+        sched = BackgroundScheduler(timezone=pytz.timezone(TZ))
+        # Публикации в указанные часы (по одной лучшей вакансии за слот)
+        sched.add_job(job_poster.publish_next,
+                      CronTrigger(hour=",".join(map(str, PUBLISH_HOURS)), minute=0),
+                      id="job_poster_publish", max_instances=1, coalesce=True)
+        # Отчёт в конце дня
+        sched.add_job(lambda: job_poster.send_report(job_poster.DAILY),
+                      CronTrigger(hour=max(PUBLISH_HOURS), minute=45),
+                      id="job_poster_report")
+        sched.start()
+        logging.info("Job Poster запущен: часы=%s, TZ=%s", PUBLISH_HOURS, TZ)
+    except Exception as e:  # noqa: BLE001 — планировщик не должен ронять веб-процесс
+        logging.error("Не удалось запустить планировщик Job Poster: %s", e)
+
+
 @app.get("/")
 def health():
     return {"ok": True}
+
+
+@app.post("/job-poster/run")
+async def job_poster_run(request: Request):
+    """Ручной запуск одного цикла публикации. Требует JOB_POSTER_TOKEN."""
+    if JOB_POSTER_TOKEN:
+        if request.headers.get("X-Token") != JOB_POSTER_TOKEN:
+            raise HTTPException(status_code=403, detail="forbidden")
+    result = job_poster.publish_next()
+    return {"ok": True, "result": result}
 
 @app.post("/webhook")
 async def webhook(request: Request):
