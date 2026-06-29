@@ -42,8 +42,21 @@ ENABLE_IMAGES = os.getenv("ENABLE_IMAGES", "1") == "1"
 
 # Источник: публичные Telegram-каналы с вакансиями (через t.me/s превью).
 ENABLE_TELEGRAM_SOURCE = os.getenv("ENABLE_TELEGRAM_SOURCE", "1") == "1"
-# Список каналов задаёт владелец, через запятую: "channel1,channel2".
-JOB_SOURCE_CHANNELS = [c.strip() for c in os.getenv("JOB_SOURCE_CHANNELS", "").split(",") if c.strip()]
+# Список каналов-источников. По умолчанию — заданные владельцем публичные каналы.
+# Можно переопределить env-переменной JOB_SOURCE_CHANNELS="chan1,chan2".
+DEFAULT_SOURCE_CHANNELS = [
+    "eventmbaHR",
+    "chickencreators_work",
+    "frilancekomfort",
+    "ellamihailova",
+    "jobfound404",
+    "helpvkino",
+    "moskovskayarabota",
+]
+JOB_SOURCE_CHANNELS = [
+    c.strip() for c in os.getenv("JOB_SOURCE_CHANNELS", ",".join(DEFAULT_SOURCE_CHANNELS)).split(",")
+    if c.strip()
+]
 
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 HH_API = "https://api.hh.ru"
