@@ -40,6 +40,11 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
 ENABLE_IMAGES = os.getenv("ENABLE_IMAGES", "1") == "1"
 
+# Источник: публичные Telegram-каналы с вакансиями (через t.me/s превью).
+ENABLE_TELEGRAM_SOURCE = os.getenv("ENABLE_TELEGRAM_SOURCE", "1") == "1"
+# Список каналов задаёт владелец, через запятую: "channel1,channel2".
+JOB_SOURCE_CHANNELS = [c.strip() for c in os.getenv("JOB_SOURCE_CHANNELS", "").split(",") if c.strip()]
+
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 HH_API = "https://api.hh.ru"
 HH_USER_AGENT = os.getenv("HH_USER_AGENT", "EventHRJobPoster/3.0 (+telegram @event_hr)")
@@ -276,7 +281,11 @@ def build_post(v: dict) -> str:
     url = v.get("alternate_url", "")
 
     duties, reqs, plus = _extract_sections(v)
+    return render_template(title, employer, city, salary, duties, reqs, plus, url)
 
+
+def render_template(title, employer, city, salary, duties, reqs, plus, apply_link) -> str:
+    """Единый шаблон поста v3.0 для любого источника."""
     lines = [
         f"🔥 {title}",
         "",
@@ -294,7 +303,7 @@ def build_post(v: dict) -> str:
     if plus:
         lines += ["", "⭐ Будет плюсом"]
         lines += [f"• {p}" for p in plus]
-    lines += ["", "🔗 Откликнуться", url, "", _hashtags(title)]
+    lines += ["", "🔗 Откликнуться", apply_link, "", _hashtags(title)]
     return "\n".join(lines)
 
 
@@ -473,23 +482,109 @@ def _reset_daily(today: str) -> None:
 
 
 # --------------------------------------------------------------------------
+# Источник: Telegram-каналы с вакансиями
+# --------------------------------------------------------------------------
+
+def _parse_tg_vacancy(msg: dict) -> dict | None:
+    """
+    Превращает пост Telegram в готовый текст вакансии через OpenAI.
+    Берёт ТОЛЬКО факты из текста. Контакт = из поста, иначе ссылка на пост.
+    Возвращает {"text", "title"} или None, если это не вакансия/не по теме.
+    """
+    if not OPENAI_API_KEY:
+        return None
+    text = msg.get("text", "")
+    if not matches_profile(text):            # дешёвый предфильтр по ключевым словам
+        return None
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        links = ", ".join(msg.get("links") or []) or "нет"
+        prompt = (
+            "Перед тобой пост из Telegram-канала вакансий. Верни СТРОГО JSON:\n"
+            '{"is_vacancy": bool, "on_topic": bool, "title": str, "company": str, '
+            '"city": str, "salary": str, "duties": [str], "requirements": [str], '
+            '"plus": [str], "contact": str}\n'
+            "Правила: НИЧЕГО НЕ ВЫДУМЫВАЙ — только то, что есть в тексте. "
+            "on_topic=true только для event/creative/marketing/PR/SMM/HR/design/"
+            "production/подрядчиков. Если зарплаты нет — salary='По договорённости'. "
+            "company/city пустые, если их нет. contact — @username, email или ссылка "
+            "ИЗ ТЕКСТА; если нет — оставь пусто. duties/requirements — короткие буллеты, "
+            "plus — 0-2.\n\n"
+            f"Ссылки из поста: {links}\n\nТекст поста:\n{text[:5000]}"
+        )
+        resp = client.responses.create(model=OPENAI_MODEL, input=prompt)
+        raw = (resp.output_text or "").strip()
+        raw = raw[raw.find("{"): raw.rfind("}") + 1]
+        d = json.loads(raw)
+    except Exception as e:                   # noqa: BLE001
+        logger.warning("Не удалось разобрать TG-пост %s: %s", msg.get("permalink"), e)
+        return None
+
+    if not (d.get("is_vacancy") and d.get("on_topic")):
+        return None
+    title = (d.get("title") or "").strip()
+    if not title:
+        return None
+    apply_link = (d.get("contact") or "").strip() or msg.get("permalink", "")
+    post = render_template(
+        title,
+        (d.get("company") or "—").strip(),
+        (d.get("city") or "—").strip(),
+        (d.get("salary") or "По договорённости").strip(),
+        [x.strip() for x in d.get("duties", []) if x.strip()][:5],
+        [x.strip() for x in d.get("requirements", []) if x.strip()][:5],
+        [x.strip() for x in d.get("plus", []) if x.strip()][:2],
+        apply_link,
+    )
+    return {"text": post, "title": title}
+
+
+def telegram_candidates(seen: set) -> list:
+    """Собирает готовые посты из всех настроенных каналов. Дедуп по permalink."""
+    if not (ENABLE_TELEGRAM_SOURCE and JOB_SOURCE_CHANNELS):
+        return []
+    import telegram_source
+    out = []
+    for channel in JOB_SOURCE_CHANNELS:
+        for msg in telegram_source.fetch_channel_messages(channel):
+            key = f"tg:{msg['channel']}/{msg['post_id']}"
+            DAILY["found"] += 1
+            if key in seen:
+                DAILY["reasons"]["dup"] += 1
+                DAILY["rejected"] += 1
+                continue
+            if not telegram_source.is_recent(msg.get("date")):
+                continue
+            parsed = _parse_tg_vacancy(msg)
+            if not parsed:
+                DAILY["reasons"]["offtopic"] += 1
+                DAILY["rejected"] += 1
+                continue
+            out.append({"key": key, "score": 10.0,
+                        "text": parsed["text"], "title": parsed["title"]})
+    return out
+
+
+# --------------------------------------------------------------------------
 # Главная операция: опубликовать следующую лучшую вакансию (1 за слот)
 # --------------------------------------------------------------------------
 
 def publish_next() -> dict:
-    """Один цикл: найти → отфильтровать → выбрать лучшую новую → опубликовать."""
+    """Один цикл: найти (hh + Telegram) → отфильтровать → выбрать лучшую → опубликовать."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if DAILY["date"] != today:
         _reset_daily(today)
 
     seen = load_seen()
+
+    # --- источник 1: hh.ru ---
     raw = search_vacancies()
     DAILY["found"] += len(raw)
-
-    # Фильтр: профиль + не дубль
-    candidates = []
+    hh_candidates = []
     for v in raw:
-        if v["id"] in seen:
+        key = f"hh:{v['id']}"
+        if key in seen:
             DAILY["reasons"]["dup"] += 1
             DAILY["rejected"] += 1
             continue
@@ -497,28 +592,35 @@ def publish_next() -> dict:
             DAILY["reasons"]["offtopic"] += 1
             DAILY["rejected"] += 1
             continue
-        candidates.append(v)
+        hh_candidates.append({"key": key, "score": priority_score(v), "hh": v})
 
-    candidates.sort(key=priority_score, reverse=True)
+    # --- источник 2: Telegram-каналы ---
+    tg_candidates = telegram_candidates(seen)
 
-    # Берём первую, которая реально открывается и не закрыта
-    for v in candidates:
-        full = fetch_vacancy(v["id"])
-        if full is None:
-            DAILY["reasons"]["closed"] += 1
-            DAILY["rejected"] += 1
-            seen.add(v["id"])          # больше не трогаем закрытую
-            continue
-        text = build_post(full)
-        image = generate_image(full.get("name", ""))
+    # Общая очередь по приоритету
+    queue = sorted(hh_candidates + tg_candidates, key=lambda c: c["score"], reverse=True)
+
+    for c in queue:
+        if "hh" in c:                         # hh: проверяем, что вакансия жива
+            full = fetch_vacancy(c["hh"]["id"])
+            if full is None:
+                DAILY["reasons"]["closed"] += 1
+                DAILY["rejected"] += 1
+                seen.add(c["key"])
+                continue
+            text = build_post(full)
+            title = full.get("name", "")
+        else:                                 # telegram: пост уже готов
+            text, title = c["text"], c["title"]
+
+        image = generate_image(title)
         if publish(text, image):
-            seen.add(v["id"])
+            seen.add(c["key"])
             save_seen(seen)
             DAILY["published"] += 1
-            logger.info("Опубликована вакансия %s: %s", v["id"], full.get("name"))
-            return {"published": True, "id": v["id"], "title": full.get("name")}
-        else:
-            return {"published": False, "error": "telegram"}
+            logger.info("Опубликовано (%s): %s", c["key"], title)
+            return {"published": True, "key": c["key"], "title": title}
+        return {"published": False, "error": "telegram"}
 
     save_seen(seen)
     return {"published": False, "reason": "нет новых подходящих вакансий"}
