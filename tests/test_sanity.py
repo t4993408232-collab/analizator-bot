@@ -1,7 +1,10 @@
 """Офлайн-проверки Job Poster (без сети)."""
+import os
 import sys
 
-import job_poster as j
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import job_poster as j  # noqa: E402
 
 
 def main() -> int:
