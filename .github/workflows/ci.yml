@@ -22,7 +22,9 @@ jobs:
           pip install -r requirements.txt
 
       - name: Compile sources
-        run: python -m py_compile main.py job_poster.py telegram_source.py
+        run: python -m py_compile main.py job_poster.py telegram_source.py tender_pipeline.py
 
       - name: Offline sanity checks
-        run: python tests/test_sanity.py
+        run: |
+          python tests/test_sanity.py
+          python tests/test_tender.py

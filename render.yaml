@@ -22,6 +22,10 @@ services:
         value: /var/data/seen_vacancies.json
       - key: JOB_POSTER_ENABLED
         value: "1"
+      - key: TENDER_AUTORUN
+        value: "1"
+      - key: TENDER_SEEN_FILE
+        value: /var/data/seen_tenders.json
       - key: BOT_TOKEN       # секрет — задать в дашборде
         sync: false
       - key: OWNER_CHAT_ID   # секрет — задать в дашборде
