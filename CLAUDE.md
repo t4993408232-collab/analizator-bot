@@ -5,7 +5,7 @@
 
 ## Что это
 
-Telegram-проект из двух частей в одном FastAPI-приложении (`main.py`):
+Telegram-проект из трёх частей в одном FastAPI-приложении (`main.py`):
 
 1. **Анализатор постов** канала `eventstory_by` — webhook `/webhook`, разбирает
    текст через OpenAI.
@@ -13,6 +13,10 @@ Telegram-проект из двух частей в одном FastAPI-прил�
    вакансии event/creative-индустрии на **hh.ru** и в публичных **Telegram-каналах**
    (`telegram_source.py`), форматирует по шаблону v3.0 и публикует в канал
    `@event_hr`. Подробности и переменные окружения — в `JOB_POSTER.md`.
+3. **Тендерный конвейер v1.0** (`tender_pipeline.py`) — разбор закупок с УТП
+   Сбербанк-АСТ (секция Росатом): страница → факты → анализ участия (OpenAI) →
+   отчёт владельцу в Telegram. Очередь `TENDER_QUEUE` прогоняется при старте
+   сервиса и вручную через `POST /tender/run`. Подробности — в `TENDER_PIPELINE.md`.
 
 Принцип №1: **ничего не выдумывать** — вакансии и контакты только из источника.
 
@@ -30,11 +34,12 @@ Telegram-проект из двух частей в одном FastAPI-прил�
 
 ## Сеть
 
-Агенту нужен доступ к `api.hh.ru`, `api.telegram.org`, `api.openai.com`, `t.me`.
+Агенту нужен доступ к `api.hh.ru`, `api.telegram.org`, `api.openai.com`, `t.me`,
+`utp.sberbank-ast.ru` (тендерный конвейер).
 В песочнице веб-сессии Claude эти хосты обычно закрыты egress-политикой —
 поэтому из сессии агент не запускается вживую; он работает на Render.
 
 ## CI
 
-`.github/workflows/ci.yml` — компиляция + офлайн-тесты (`tests/test_sanity.py`)
-на каждый push/PR.
+`.github/workflows/ci.yml` — компиляция + офлайн-тесты (`tests/test_sanity.py`,
+`tests/test_tender.py`) на каждый push/PR.
