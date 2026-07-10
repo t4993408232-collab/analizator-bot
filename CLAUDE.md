@@ -43,3 +43,17 @@ Telegram-проект из трёх частей в одном FastAPI-прил�
 
 `.github/workflows/ci.yml` — компиляция + офлайн-тесты (`tests/test_sanity.py`,
 `tests/test_tender.py`) на каждый push/PR.
+
+## Скиллы Claude (`.claude/skills/`)
+
+В репо установлены скиллы дизайн-инженерии от Emil Kowalski
+(https://github.com/emilkowalski/skills, MIT — см. `.claude/skills/LICENSE-emilkowalski-skills`):
+
+- `emil-design-eng` — философия UI-полировки: решения по анимациям (easing,
+  длительности, springs), компонентные принципы, производительность, a11y.
+- `apple-design` — подход Apple к fluid-интерфейсам, перенесённый на веб.
+- `review-animations` — ревью анимационного кода по жёсткой планке крафта
+  (вызывается вручную, `disable-model-invocation: true`).
+- `animation-vocabulary` — глоссарий: по описанию эффекта подбирает точный термин.
+
+Скиллы подхватываются Claude Code автоматически из `.claude/skills/`.
