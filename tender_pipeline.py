@@ -156,8 +156,11 @@ STRUCTURE_FIELDS = [
 def _openai_json(prompt: str) -> dict:
     from openai import OpenAI
     client = OpenAI(api_key=OPENAI_API_KEY)
-    resp = client.responses.create(model=OPENAI_MODEL, input=prompt)
-    raw = (resp.output_text or "").strip()
+    resp = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = (resp.choices[0].message.content or "").strip()
     raw = raw[raw.find("{"): raw.rfind("}") + 1]
     return json.loads(raw)
 
@@ -203,8 +206,11 @@ def assess_tender(data: dict, page_text: str) -> str:
         f"Факты (JSON): {json.dumps(data, ensure_ascii=False)}\n\n"
         f"Фрагмент страницы:\n{page_text[:8000]}"
     )
-    resp = client.responses.create(model=OPENAI_MODEL, input=prompt)
-    return (resp.output_text or "").strip()
+    resp = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return (resp.choices[0].message.content or "").strip()
 
 
 # --------------------------------------------------------------------------

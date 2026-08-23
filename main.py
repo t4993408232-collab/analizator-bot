@@ -41,11 +41,11 @@ def analyze_post(text: str) -> str:
 {text}
 """.strip()
 
-    resp = client.responses.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
-        input=prompt,
+    resp = client.chat.completions.create(
+        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        messages=[{"role": "user", "content": prompt}],
     )
-    return (resp.output_text or "").strip()
+    return (resp.choices[0].message.content or "").strip()
 
 # --------------------------------------------------------------------------
 # Event HR Job Poster v3.0 — расписание и ручной запуск
