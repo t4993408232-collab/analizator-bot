@@ -16,6 +16,7 @@ for cam in cams or RES.keys():
     sc.render.resolution_x, sc.render.resolution_y = RES[cam]
     plan = cam == "CAM_05_Plan"
     bpy.data.collections["Ceiling"].hide_render = plan
+    sc.view_settings.exposure = 0.15 if plan else 1.1
     sun = bpy.data.objects["Sun"]
     d = Vector((-0.3, -0.5, -1.2)).normalized() if plan else Vector((-0.42, -1.0, -0.42)).normalized()
     sun.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
