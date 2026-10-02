@@ -21,10 +21,5 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Compile sources
-        run: python -m py_compile main.py job_poster.py telegram_source.py tender_pipeline.py
-
-      - name: Offline sanity checks
-        run: |
-          python tests/test_sanity.py
-          python tests/test_tender.py
+      - name: Harness check (compile + offline tests + feature_list)
+        run: ./init.sh

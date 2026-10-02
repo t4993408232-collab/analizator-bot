@@ -1,0 +1,44 @@
+{
+  "features": [
+    {
+      "id": "feat-001",
+      "name": "Анализатор постов eventstory_by",
+      "description": "Webhook /webhook принимает пост канала и разбирает текст через OpenAI (main.py: analyze_post).",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "Код в main.py (коммиты до aaa006a). Проверка из репо — только py_compile; офлайн-теста нет, живой прогон только на Render."
+    },
+    {
+      "id": "feat-002",
+      "name": "Event HR Job Poster v3.0",
+      "description": "Поиск вакансий на hh.ru и в публичных Telegram-каналах, форматирование по шаблону v3.0, публикация в @event_hr с антидублем. См. JOB_POSTER.md.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "Коммит aaa006a; tests/test_sanity.py — OK (./init.sh)."
+    },
+    {
+      "id": "feat-003",
+      "name": "Деплой на Render",
+      "description": "Blueprint render.yaml, постоянный диск для антидубля, ручной деплой ./deploy.sh через RENDER_DEPLOY_HOOK.",
+      "dependencies": ["feat-002"],
+      "status": "done",
+      "evidence": "Коммит a38308f. Из сессии не проверяется (Render недоступен)."
+    },
+    {
+      "id": "feat-004",
+      "name": "Тендерный конвейер v1.0",
+      "description": "УТП Сбербанк-АСТ (Росатом): страница → факты → анализ участия (OpenAI) → отчёт владельцу; очередь TENDER_QUEUE, POST /tender/run. См. TENDER_PIPELINE.md.",
+      "dependencies": ["feat-003"],
+      "status": "done",
+      "evidence": "Коммиты 05f011a, dd94bec (#3); tests/test_tender.py — OK (./init.sh)."
+    },
+    {
+      "id": "feat-005",
+      "name": "Harness для агентов",
+      "description": "Обвязка по learn-harness-engineering: init.sh, feature_list.json, progress.md, session-handoff.md, правила сессии в CLAUDE.md, скилл .claude/skills/harness-creator, CI через ./init.sh.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "./init.sh — OK; validate-harness.mjs — 100/100 (2026-10-02)."
+    }
+  ]
+}
