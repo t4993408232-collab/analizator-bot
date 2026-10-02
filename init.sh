@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Единая проверка репозитория: её запускают агент (в начале и конце сессии)
-# и CI. Без сети: живые hh.ru / Telegram / OpenAI / УТП здесь не трогаются.
+# Единая проверка репозитория (= make check): её запускают агент (в начале и
+# конце сессии) и CI. Без сети: живые hh.ru / Telegram / OpenAI / УТП здесь не трогаются.
 #
 #   ./init.sh            — только проверка
 #   ./init.sh --install  — сначала поставить зависимости из requirements.txt
@@ -17,9 +17,15 @@ fi
 echo "=== Компиляция ==="
 "$PY" -m py_compile main.py job_poster.py telegram_source.py tender_pipeline.py
 
+echo "=== Правила архитектуры (.harness/arch-rules.json) ==="
+bash scripts/check-arch.sh
+
 echo "=== Офлайн-тесты ==="
 "$PY" tests/test_sanity.py
 "$PY" tests/test_tender.py
+
+echo "=== Смоук запуска приложения ==="
+"$PY" tests/smoke_app.py
 
 echo "=== Состояние фич (feature_list.json) ==="
 "$PY" - <<'EOF'

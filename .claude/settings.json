@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./init.sh)",
+      "Bash(./init.sh --install)",
+      "Bash(make check)",
+      "Bash(make test)",
+      "Bash(make e2e)",
+      "Bash(make check-arch)",
+      "Bash(make verify-feature:*)",
+      "Bash(make vcr)",
+      "Bash(make clean-check)",
+      "Bash(make audit)",
+      "Bash(make session-start:*)",
+      "Bash(make session-end:*)",
+      "Bash(bash scripts/session-trace.sh:*)"
+    ],
+    "deny": [
+      "Bash(git push origin main)",
+      "Bash(git push -u origin main)"
+    ]
+  }
+}

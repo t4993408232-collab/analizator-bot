@@ -1,0 +1,65 @@
+[
+  {
+    "id": "A01",
+    "description": "В репо нет зашитых токенов Telegram-бота и ключей OpenAI",
+    "check": "! git grep --untracked -nIE '[0-9]{8,10}:[A-Za-z0-9_-]{35}|sk-(proj-)?[A-Za-z0-9_-]{20,}' -- . ':!.harness/arch-rules.json'",
+    "expect": "exit-0",
+    "what": "В файле репо найдено что-то похожее на BOT_TOKEN или OPENAI_API_KEY",
+    "why": "Репо уходит на GitHub; утёкший токен = чужой контроль над ботом и счётом OpenAI. Секреты живут только в env Render (sync: false в render.yaml)",
+    "fix": "Убрать значение из файла, читать через os.getenv(...), добавить ключ в render.yaml с sync: false и перевыпустить токен у @BotFather / в OpenAI"
+  },
+  {
+    "id": "A02",
+    "description": "Модули агентов не импортируют main.py",
+    "check": "! grep -nE '^[[:space:]]*(import main|from main )' job_poster.py telegram_source.py tender_pipeline.py",
+    "expect": "exit-0",
+    "what": "job_poster.py / telegram_source.py / tender_pipeline.py импортирует main",
+    "why": "main.py — тонкий FastAPI-слой поверх агентов. Обратный импорт даёт цикл и тянет FastAPI/OpenAI-клиент в офлайн-тесты",
+    "fix": "Перенести нужную функцию в модуль агента (или общий модуль) и импортировать её из main.py, а не наоборот"
+  },
+  {
+    "id": "A03",
+    "description": "Офлайн-тесты не ходят в сеть напрямую",
+    "check": "! grep -nE 'requests\\.(get|post|request)\\(' tests/test_sanity.py tests/test_tender.py",
+    "expect": "exit-0",
+    "what": "Офлайн-тест вызывает requests.get/post",
+    "why": "В песочнице Claude и в CI внешние хосты закрыты или нестабильны: тест станет красным не из-за кода",
+    "fix": "Подставить фикстуру (HTML/JSON строкой, как FIXTURE_HTML в tests/test_tender.py) и тестировать функцию разбора, а не загрузку"
+  },
+  {
+    "id": "A04",
+    "description": "Каждая переменная окружения из кода описана в документации",
+    "check": "for v in $(grep -ohE 'os\\.getenv\\(\"[A-Z_]+\"' *.py | sed -E 's/.*\"([A-Z_]+)\"/\\1/' | sort -u); do grep -qw \"$v\" JOB_POSTER.md TENDER_PIPELINE.md CLAUDE.md render.yaml || { echo \"не описана: $v\"; exit 1; }; done",
+    "expect": "exit-0",
+    "what": "В коде читается переменная окружения, которой нет ни в JOB_POSTER.md, ни в TENDER_PIPELINE.md, ни в render.yaml",
+    "why": "Настройки задаются руками в дашборде Render; неописанная переменная = забытая настройка при следующем деплое",
+    "fix": "Добавить строку в таблицу переменных JOB_POSTER.md или TENDER_PIPELINE.md (имя, назначение, дефолт) в том же коммите"
+  },
+  {
+    "id": "A05",
+    "description": "В коде приложения нет отладочных артефактов",
+    "check": "! grep -nE '^[[:space:]]*(breakpoint\\(|import pdb|pdb\\.set_trace|print\\()' main.py job_poster.py telegram_source.py tender_pipeline.py",
+    "expect": "exit-0",
+    "what": "В модуле приложения остался print(), breakpoint() или pdb",
+    "why": "На Render print не попадает в нормальный лог-формат, breakpoint вешает воркер",
+    "fix": "Заменить на logging.info/logging.error (как в остальном коде) или удалить"
+  },
+  {
+    "id": "A06",
+    "description": "Скрипты обвязки синтаксически корректны",
+    "check": "for f in init.sh deploy.sh scripts/*.sh tools/*.sh; do bash -n \"$f\" || exit 1; done",
+    "expect": "exit-0",
+    "what": "Один из shell-скриптов обвязки не парсится bash",
+    "why": "Сломанный init.sh или check-arch.sh молча отключает проверку для всех следующих сессий",
+    "fix": "Запустить bash -n <файл> и исправить строку из сообщения об ошибке"
+  },
+  {
+    "id": "A07",
+    "description": "Команда запуска совпадает в Procfile и render.yaml",
+    "check": "test \"$(sed -n 's/^web: //p' Procfile)\" = \"$(sed -n 's/^ *startCommand: //p' render.yaml)\"",
+    "expect": "exit-0",
+    "what": "startCommand в render.yaml и web в Procfile разошлись",
+    "why": "Render берёт render.yaml, а make dev и локальный запуск — Procfile; расхождение = в проде запускается не то, что проверили",
+    "fix": "Привести обе строки к одной команде (сейчас: uvicorn main:app --host 0.0.0.0 --port $PORT)"
+  }
+]

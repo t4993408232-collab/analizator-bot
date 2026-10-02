@@ -5,7 +5,7 @@
 
 ## Что это
 
-Telegram-проект из трёх частей в одном FastAPI-приложении (`main.py`):
+Telegram-проект (project / service) из трёх частей в одном FastAPI-приложении (`main.py`):
 
 1. **Анализатор постов** канала `eventstory_by` — webhook `/webhook`, разбирает
    текст через OpenAI.
@@ -47,45 +47,85 @@ Telegram-проект из трёх частей в одном FastAPI-прил�
 ## Harness — как работать в сессии
 
 Обвязка по курсу learn-harness-engineering. Состояние живёт в файлах, не в чате.
+Подробный регламент — [docs/harness.md](docs/harness.md), границы модулей —
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), оценки модулей —
+[docs/quality-document.md](docs/quality-document.md).
 
 | Файл | Зачем |
 |---|---|
-| `feature_list.json` | фичи: `status` (not-started / in-progress / blocked / done), `dependencies`, `evidence` |
+| `feature_list.json` | фичи: `status`, `dependencies`, `layers` проверки, `evidence` |
 | `progress.md` | Current State, Next Steps, Blockers — откуда продолжать |
-| `session-handoff.md` | шаблон передачи, если работа не влезла в одну сессию |
-| `init.sh` | единая проверка (компиляция + офлайн-тесты + валидность feature_list) |
-| `.claude/skills/harness-creator/` | скилл: аудит/доработка обвязки (`validate-harness.mjs`) |
+| `DECISIONS.md` | почему сделано так (новое решение — запись сверху) |
+| `session-handoff.md` | передача, если работа не влезла в одну сессию |
+| `init.sh` = `make check` | вся проверка: компиляция, check-arch, тесты, смоук, feature_list |
+| `.harness/arch-rules.json` | правила архитектуры (WHAT/WHY/FIX), `make check-arch` |
+| `templates/` | контракт фичи, рубрика оценки, чек-лист чистого состояния |
+| `.claude/skills/harness-creator/` | скилл курса; `make audit` — аудит обвязки |
 
-### Startup Workflow (до любых правок)
+### Startup Workflow (clock-in, before touching code)
 
 1. Прочитать этот файл, затем `progress.md` и `feature_list.json`.
-2. `git log --oneline -5`.
-3. Запустить `./init.sh` (в чистом окружении — `./init.sh --install`).
+2. `git log --oneline -5`; `make session-start TASK="..." F=feat-XXX`.
+3. `make check` (в чистом окружении — `./init.sh --install`).
    Красный baseline чинится первым, до новой работы.
 
 ### Working Rules
 
 - **One feature at a time:** в `in-progress` не больше одной фичи (WIP=1,
-  `init.sh` это проверяет). Новая задача — сначала запись в `feature_list.json`.
-- **Stay in scope:** не трогать файлы, не относящиеся к текущей фиче.
-- **Docs в том же коммите:** изменил поведение — обнови `JOB_POSTER.md` /
-  `TENDER_PIPELINE.md` / этот файл в том же коммите.
-- **Коммиты атомарные**, в сообщении — зачем, а не только что.
-- **Не спешить под конец контекста:** лучше остановиться, обновить
-  `progress.md` и закоммитить чистую точку, чем недоделать проверку.
+  `init.sh` проверяет). Фича — one session per feature; больше — разбить.
+- **State machine:** not-started → in-progress → done (blocked — в сторону).
+  `done` ставит только `make verify-feature F=<id>`, руками — never.
+- **Stay in scope:** не трогать файлы вне текущей фичи. Заметил смежное — новая фича.
+- **Docs в том же коммите:** изменил поведение или env — обнови `JOB_POSTER.md` /
+  `TENDER_PIPELINE.md` / `docs/` в том же коммите — no stale docs (A04 ловит env).
+- **Atomic commits:** один коммит — один логический шаг, репо консистентно после
+  каждого коммита. Commit message: explain why, not just what.
+- **Running low on context — do not rush:** лучше остановиться, обновить
+  `progress.md` и закоммитить чистую точку, чем пропустить проверку.
 
-### Definition of Done
+### Hard Constraints
 
-Фича done only when:
+- MUST NOT выдумывать вакансии, контакты, факты закупок.
+  why: принцип №1, отчёты и канал читают живые люди.
+- MUST NOT пушить в `main` напрямую. why: push в `main` = автодеплой на Render.
+- MUST NOT хранить секреты в репо. why: репо на GitHub; source: A01 в arch-rules.
+- MUST NOT ходить в сеть из офлайн-тестов. why: в сессии и CI хосты закрыты; source: A03.
 
-- поведение реализовано;
-- `./init.sh` проходит (а если поведение новое — есть офлайн-тест на него);
-- в `feature_list.json` записан `evidence` (коммит + что проверено).
-  Живую проверку на Render из сессии сделать нельзя — так и пишем в evidence.
+### Verification и Definition of Done
 
-### End of Session
+Репо консистентно, когда `make check` exits 0. Фича done only when:
 
-1. `./init.sh` — зелёный.
-2. Обновить `feature_list.json` (status, evidence) и `progress.md`
-   (Current State, Next Steps, Blockers; старое — в «Историю сессий»).
-3. Закоммитить в рабочую ветку. Не в `main`: push в `main` = деплой на Render.
+- поведение реализовано, есть офлайн-тест на новое поведение;
+- `make verify-feature F=<id>` прошёл все слои по порядку — Layer 1 (синтаксис,
+  check-arch) → Layer 2 (офлайн-тест) → Layer 3 (`make e2e`, смоук запуска).
+  Do not proceed к следующему слою, пока предыдущий красный;
+- Layer 3 обязателен для cross-component изменений (роут + агент);
+- evidence записан (verify-feature делает сам). Готово = runtime evidence,
+  а не «код написан». Live на Render из сессии не проверить — так и пишем.
+
+### Architecture Boundaries
+
+`main.py` — тонкий FastAPI-слой; агенты не импортируют его (A02). Все границы
+проверяет `make check-arch`. Замечание из code review, которое может
+повториться, становится правилом в `.harness/arch-rules.json`.
+
+### Observability
+
+Контракт фичи (`templates/sprint-contract.md`) — до старта крупной фичи;
+события сессии — `scripts/session-trace.sh` (verify-feature пишет сам);
+готовую фичу оценить по `templates/evaluator-rubric.md`: все измерения A или B.
+
+### End of Session (clock-out)
+
+1. `make check` и `make clean-check` — зелёные (clean-state: компиляция,
+   тесты, состояние записано, нет debug-артефактов, приложение стартует).
+2. Обновить `feature_list.json`, `progress.md` (Current State, Next Steps,
+   Blockers; старое — в «Историю сессий») и оценку тронутого модуля в
+   `docs/quality-document.md`. Dual-mode cleanup: это — immediate; раз в неделю — weekly periodic sweep
+   (см. docs/harness.md → Уборка).
+3. `make session-end RESULT=pass|fail|partial`; закоммитить в рабочую ветку.
+
+### Tools / MCP
+
+GitHub — только через MCP-инструменты `mcp__github__*` (gh CLI в сессии нет).
+Права на команды обвязки (`make`, `./init.sh`, `scripts/`) — в `.claude/settings.json`.

@@ -4,7 +4,26 @@
       "id": "feat-001",
       "name": "Анализатор постов eventstory_by",
       "description": "Webhook /webhook принимает пост канала и разбирает текст через OpenAI (main.py: analyze_post).",
+      "behavior": "Владелец присылает текст в личку или пост выходит в канале — бот присылает разбор от OpenAI; пустые и битые апдейты не роняют webhook.",
       "dependencies": [],
+      "verification": "make verify-feature F=feat-001",
+      "layers": [
+        {
+          "label": "Layer 1 — синтаксис и статика",
+          "cmd": "python3 -m py_compile main.py && bash scripts/check-arch.sh",
+          "repair": "py_compile печатает файл и строку ошибки; check-arch печатает WHAT/WHY/FIX для нарушенного правила."
+        },
+        {
+          "label": "Layer 2 — поведение",
+          "cmd": "python3 tests/smoke_app.py",
+          "repair": "Офлайн-теста analyze_post нет; смоук проверяет только ветки webhook без OpenAI (пустой пост, битый JSON). Если упало — смотри обработку update в main.py: webhook."
+        },
+        {
+          "label": "Layer 3 — системное подтверждение",
+          "cmd": "python3 tests/smoke_app.py",
+          "repair": "Смоук печатает лог uvicorn. Частые причины: ошибка импорта при старте main.py, новая обязательная env-переменная без дефолта, занят порт (SMOKE_PORT=8766). Живой прогон (hh.ru/Telegram/OpenAI/УТП) — только на Render."
+        }
+      ],
       "status": "done",
       "evidence": "Код в main.py (коммиты до aaa006a). Проверка из репо — только py_compile; офлайн-теста нет, живой прогон только на Render."
     },
@@ -12,7 +31,26 @@
       "id": "feat-002",
       "name": "Event HR Job Poster v3.0",
       "description": "Поиск вакансий на hh.ru и в публичных Telegram-каналах, форматирование по шаблону v3.0, публикация в @event_hr с антидублем. См. JOB_POSTER.md.",
+      "behavior": "Раз в час в рабочие часы в @event_hr выходит одна вакансия по шаблону v3.0, без дублей; вечером владельцу приходит отчёт.",
       "dependencies": [],
+      "verification": "make verify-feature F=feat-002",
+      "layers": [
+        {
+          "label": "Layer 1 — синтаксис и статика",
+          "cmd": "python3 -m py_compile job_poster.py telegram_source.py && bash scripts/check-arch.sh",
+          "repair": "py_compile печатает файл и строку ошибки; check-arch печатает WHAT/WHY/FIX для нарушенного правила."
+        },
+        {
+          "label": "Layer 2 — поведение",
+          "cmd": "python3 tests/test_sanity.py",
+          "repair": "[FAIL] <имя> указывает на функцию: salary → format_salary, profile → matches_profile, template → render_template в job_poster.py. Если ImportError — make setup."
+        },
+        {
+          "label": "Layer 3 — системное подтверждение",
+          "cmd": "python3 tests/smoke_app.py",
+          "repair": "Смоук печатает лог uvicorn. Частые причины: ошибка импорта при старте main.py, новая обязательная env-переменная без дефолта, занят порт (SMOKE_PORT=8766). Живой прогон (hh.ru/Telegram/OpenAI/УТП) — только на Render."
+        }
+      ],
       "status": "done",
       "evidence": "Коммит aaa006a; tests/test_sanity.py — OK (./init.sh)."
     },
@@ -20,7 +58,28 @@
       "id": "feat-003",
       "name": "Деплой на Render",
       "description": "Blueprint render.yaml, постоянный диск для антидубля, ручной деплой ./deploy.sh через RENDER_DEPLOY_HOOK.",
-      "dependencies": ["feat-002"],
+      "behavior": "Push в main поднимает сервис на Render из render.yaml с постоянным диском /var/data для антидубля.",
+      "dependencies": [
+        "feat-002"
+      ],
+      "verification": "make verify-feature F=feat-003",
+      "layers": [
+        {
+          "label": "Layer 1 — синтаксис и статика",
+          "cmd": "python3 -m py_compile main.py && bash scripts/check-arch.sh",
+          "repair": "py_compile печатает файл и строку ошибки; check-arch печатает WHAT/WHY/FIX для нарушенного правила."
+        },
+        {
+          "label": "Layer 2 — поведение",
+          "cmd": "bash scripts/check-arch.sh",
+          "repair": "A07 — Procfile и render.yaml разошлись; A04 — новая env-переменная не описана в документации. Сам деплой из сессии не проверить."
+        },
+        {
+          "label": "Layer 3 — системное подтверждение",
+          "cmd": "python3 tests/smoke_app.py",
+          "repair": "Смоук печатает лог uvicorn. Частые причины: ошибка импорта при старте main.py, новая обязательная env-переменная без дефолта, занят порт (SMOKE_PORT=8766). Живой прогон (hh.ru/Telegram/OpenAI/УТП) — только на Render."
+        }
+      ],
       "status": "done",
       "evidence": "Коммит a38308f. Из сессии не проверяется (Render недоступен)."
     },
@@ -28,15 +87,55 @@
       "id": "feat-004",
       "name": "Тендерный конвейер v1.0",
       "description": "УТП Сбербанк-АСТ (Росатом): страница → факты → анализ участия (OpenAI) → отчёт владельцу; очередь TENDER_QUEUE, POST /tender/run. См. TENDER_PIPELINE.md.",
-      "dependencies": ["feat-003"],
+      "behavior": "Закупка из TENDER_QUEUE или POST /tender/run разбирается в отчёт владельцу: факты со страницы + анализ участия; повтор не шлётся.",
+      "dependencies": [
+        "feat-003"
+      ],
+      "verification": "make verify-feature F=feat-004",
+      "layers": [
+        {
+          "label": "Layer 1 — синтаксис и статика",
+          "cmd": "python3 -m py_compile tender_pipeline.py && bash scripts/check-arch.sh",
+          "repair": "py_compile печатает файл и строку ошибки; check-arch печатает WHAT/WHY/FIX для нарушенного правила."
+        },
+        {
+          "label": "Layer 2 — поведение",
+          "cmd": "python3 tests/test_tender.py",
+          "repair": "[FAIL] <имя> указывает на стадию: url → parse_purchase_url, extract/xml → разбор HTML, report → сборка отчёта в tender_pipeline.py. Фикстура FIXTURE_HTML — в tests/test_tender.py."
+        },
+        {
+          "label": "Layer 3 — системное подтверждение",
+          "cmd": "python3 tests/smoke_app.py",
+          "repair": "Смоук печатает лог uvicorn. Частые причины: ошибка импорта при старте main.py, новая обязательная env-переменная без дефолта, занят порт (SMOKE_PORT=8766). Живой прогон (hh.ru/Telegram/OpenAI/УТП) — только на Render."
+        }
+      ],
       "status": "done",
       "evidence": "Коммиты 05f011a, dd94bec (#3); tests/test_tender.py — OK (./init.sh)."
     },
     {
       "id": "feat-005",
       "name": "Harness для агентов",
-      "description": "Обвязка по learn-harness-engineering: init.sh, feature_list.json, progress.md, session-handoff.md, правила сессии в CLAUDE.md, скилл .claude/skills/harness-creator, CI через ./init.sh.",
+      "description": "Обвязка по learn-harness-engineering: init.sh / Makefile, feature_list.json со слоями, progress.md, DECISIONS.md, arch-rules + check-arch, verify-feature, session-trace, clean-state-check, смоук приложения, шаблоны, docs/, скилл harness-creator, CI через ./init.sh.",
+      "behavior": "Агент в новой сессии за одну команду (./init.sh) понимает состояние репо и проверяет его; правила и состояние лежат в файлах.",
       "dependencies": [],
+      "verification": "make verify-feature F=feat-005",
+      "layers": [
+        {
+          "label": "Layer 1 — синтаксис и статика",
+          "cmd": "python3 -m py_compile main.py && bash scripts/check-arch.sh",
+          "repair": "py_compile печатает файл и строку ошибки; check-arch печатает WHAT/WHY/FIX для нарушенного правила."
+        },
+        {
+          "label": "Layer 2 — поведение",
+          "cmd": "./init.sh",
+          "repair": "init.sh печатает упавший шаг; feature_list: status=done без evidence или две фичи in-progress одновременно."
+        },
+        {
+          "label": "Layer 3 — системное подтверждение",
+          "cmd": "python3 tests/smoke_app.py",
+          "repair": "Смоук печатает лог uvicorn. Частые причины: ошибка импорта при старте main.py, новая обязательная env-переменная без дефолта, занят порт (SMOKE_PORT=8766). Живой прогон (hh.ru/Telegram/OpenAI/УТП) — только на Render."
+        }
+      ],
       "status": "done",
       "evidence": "./init.sh — OK; validate-harness.mjs — 100/100 (2026-10-02)."
     }

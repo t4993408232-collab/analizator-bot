@@ -35,6 +35,7 @@
 | `JOB_POSTER_TZ` | таймзона | `Europe/Moscow` |
 | `JOB_POSTER_TOKEN` | секрет для ручного запуска `/job-poster/run` | — |
 | `SEEN_FILE` | файл антидубля | `seen_vacancies.json` |
+| `HH_USER_AGENT` | User-Agent для api.hh.ru (без него hh.ru отвечает 400) | `EventHRJobPoster/3.0 (+telegram @event_hr)` |
 
 ## Ручной запуск (проверка)
 

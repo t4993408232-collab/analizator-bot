@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 seen_vacancies.json
 .env
+seen_tenders.json
+.harness/traces/*
+!.harness/traces/.gitkeep
