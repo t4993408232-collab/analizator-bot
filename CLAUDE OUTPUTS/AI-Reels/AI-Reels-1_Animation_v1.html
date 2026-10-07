@@ -95,7 +95,7 @@ const CAPS=[
   {s:'Она ответила —\nуверенно, с деталями.',t0:6.45,t1:11.85,y:400,size:50,col:'#d8d8d8'},
   {s:'Этих книг нет.',t0:12.75,t1:17.45,y:320,size:84},
   {s:'Нейросеть выбирает не правду,',t0:18.55,t1:31.7,y:262,size:50},
-  {s:'а самое правдоподобное продолжение.',t0:22.3,t1:31.7,y:368,size:50,red:'правдоподобное'},
+  {s:'а самое правдоподобное продолжение.',t0:22.3,t1:31.7,y:362,size:50,red:'правдоподобное'},
   {s:'Это уже случалось в суде.',t0:33.5,t1:41.5,y:300,size:60},
   {s:'Три улики против выдумок',t0:42.35,t1:48.6,y:300,size:56},
 ];
@@ -426,7 +426,7 @@ function S4(t){ // 18–32 inside the model
   // red circle around 0.03
   const rc=seg(t,27.6,28.6);
   if(rc>0){ctx.save();ctx.strokeStyle=RED2;ctx.lineWidth=6;ctx.lineCap='round';ctx.beginPath();
-    const cx0=X0+.03*K+26+75,cy0=1480;for(let i=0;i<=60*rc;i++){const a=-2.6+i/60*6.6;const r=1+.06*Math.sin(i*.3);ctx.lineTo(cx0+Math.cos(a)*130*r,cy0+Math.sin(a)*62*r);}ctx.stroke();ctx.restore();}
+    const cx0=X0+.03*K+26+75,cy0=1480;for(let i=0;i<=60*rc;i++){const a=-2.6+i/60*6.6;const r=1+.06*Math.sin(i*.3);ctx.lineTo(cx0+Math.cos(a)*120*r,cy0+8+Math.sin(a)*54*r);}ctx.stroke();ctx.restore();}
   ctx.restore();
   blinds(t,.28,-.3,22);
 }
@@ -490,17 +490,17 @@ function S7(t){ // 49–55 what I think
   const sw=Math.sin(t*1.1)*.02;
   lamp(t,540,250,{sw,warm,coneLen:1500,cone:.8});
   lightPool(540,1350,620,200,.12+.08*warm,mixHex('#ffffff',AMBER,warm));
+  blinds(t,.22,-.3,20);
   const ha=eo(seg(t,49.4,50.0));
   ctx.save();ctx.globalAlpha=ha;setFont(40,700,MONO);ctx.fillStyle=mixHex('#bdbdbd',AMBER,warm);ctx.textAlign='center';ctx.textBaseline='middle';
   if(ctx.letterSpacing!==undefined)ctx.letterSpacing='10px';ctx.fillText('ЧТО ДУМАЮ Я',545,700);ctx.restore();
   ctx.fillStyle=RED;ctx.fillRect(540-140*ha,735,280*ha,4);
-  const a1=eo(seg(t,49.7,50.3)),dim=lerp(1,.55,eo(seg(t,51.9,52.4)));
+  const a1=eo(seg(t,49.7,50.3)),dim=lerp(1,.72,eo(seg(t,51.9,52.4)));
   text('«Правдоподобно» и «правда» звучат похоже.',540,880+(1-a1)*20,{size:60,weight:700,family:SERIF,maxW:900,alpha:a1*dim,lh:1.2});
   const a2=eo(seg(t,51.8,52.4));
   text('Для меня это разные вещи — и я стараюсь говорить, когда не уверен.',540,1150+(1-a2)*20,{size:50,weight:400,family:SERIF,maxW:900,alpha:a2,color:'#f3ead8',lh:1.3});
   const a3=eo(seg(t,52.8,53.3));
   text('— Claude',900,1360,{size:48,weight:700,family:SERIF,align:'right',color:mixHex('#dddddd',AMBER,warm),alpha:a3});
-  blinds(t,.22,-.3,20);
 }
 
 function render(t){
