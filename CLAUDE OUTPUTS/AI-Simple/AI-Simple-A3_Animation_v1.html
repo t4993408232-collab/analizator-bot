@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Как из автодополнения сделали собеседника</title>
+<style>
+  html,body{margin:0;height:100%;background:#03040a;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{display:block;height:100vh;max-width:100vw;aspect-ratio:9/16}
+  body.render canvas{height:auto;width:1080px}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+/* ===== AI-Reels common kit (paste verbatim into each video's <script>) ===== */
+const W=1080,H=1920;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const SANS='Inter, "DejaVu Sans", sans-serif', MONO='"DejaVu Sans Mono", monospace', SERIF='"DejaVu Serif", Georgia, serif';
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const eo=t=>1-Math.pow(1-t,3);
+const seg=(t,a,b)=>clamp((t-a)/(b-a));
+const env=(t,a,b,f=.5)=>clamp((t-a)/f)*clamp((b-t)/f);
+const hash=n=>{const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);};
+function rng(seed){let s=seed>>>0||1;return()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296;};}
+function hex(h){const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255];}
+function mixHex(a,b,t){const A=hex(a),B=hex(b);return'#'+A.map((v,i)=>Math.round(lerp(v,B[i],t)).toString(16).padStart(2,'0')).join('');}
+function rgba(h,a){const[r,g,b]=hex(h);return`rgba(${r},${g},${b},${a})`;}
+function setFont(size,weight=500,family=SANS){ctx.font=`${weight} ${size}px ${family}`;}
+function wrap(s,maxW){const out=[];for(const para of String(s).split('\n')){const words=para.split(' ');let line='';
+  for(const w of words){const test=line?line+' '+w:w;if(ctx.measureText(test).width>maxW&&line){out.push(line);line=w;}else line=test;}
+  out.push(line);}return out;}
+/* text(s,x,y,{size,weight,color,alpha,align,family,maxW,lh,glow,shadow}) – multi-line centered vertically on y */
+function text(s,x,y,o={}){
+  const{size=48,weight=500,color='#fff',alpha=1,align='center',family=SANS,maxW=0,lh=1.25,glow=0,shadow='rgba(0,0,0,.8)'}=o;
+  if(alpha<=.002)return;
+  ctx.save();ctx.globalAlpha*=alpha;ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='middle';
+  setFont(size,weight,family);ctx.shadowColor=glow?color:shadow;ctx.shadowBlur=glow||(shadow?16:0);
+  const lines=maxW?wrap(s,maxW):String(s).split('\n');const off=(lines.length-1)*size*lh/2;
+  lines.forEach((l,i)=>ctx.fillText(l,x,y-off+i*size*lh));ctx.restore();
+}
+function rrect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+function glowDot(x,y,r,color,a){if(a<=0)return;const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,rgba(color,a));g.addColorStop(1,rgba(color,0));ctx.fillStyle=g;ctx.fillRect(x-r,y-r,2*r,2*r);}
+/* film grain / noise overlay, deterministic per frame */
+const _grain=(()=>{const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');const d=g.createImageData(256,256);const r=rng(99);
+  for(let i=0;i<d.data.length;i+=4){const v=r()*255;d.data[i]=d.data[i+1]=d.data[i+2]=v;d.data[i+3]=255;}g.putImageData(d,0,0);return c;})();
+function grain(t,alpha=.08,mode='overlay'){ctx.save();ctx.globalAlpha=alpha;ctx.globalCompositeOperation=mode;
+  const ox=Math.floor(hash(Math.floor(t*24))*256),oy=Math.floor(hash(Math.floor(t*24)+7)*256);
+  ctx.translate(-ox,-oy);ctx.fillStyle=ctx.createPattern(_grain,'repeat');ctx.fillRect(0,0,W+256,H+256);ctx.restore();}
+/* Channel watermark – call LAST in render(t), every frame. dark=true for light backgrounds */
+function watermark(dark=false){
+  const label='t.me/eventstory_by';ctx.save();ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;
+  setFont(34,700);const tw=ctx.measureText(label).width,iw=46,pw=tw+iw+56,ph=68,x=540-pw/2,y=1812;
+  rrect(x,y,pw,ph,34);ctx.fillStyle=dark?'rgba(255,255,255,.7)':'rgba(8,10,24,.55)';ctx.fill();
+  ctx.strokeStyle=dark?'rgba(0,0,0,.25)':'rgba(255,255,255,.28)';ctx.lineWidth=2;ctx.stroke();
+  const cx=x+28+iw/2,cy=y+ph/2;ctx.fillStyle='#2aabee';ctx.beginPath();ctx.arc(cx,cy,iw/2,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(cx-13,cy+1);ctx.lineTo(cx+12,cy-10);ctx.lineTo(cx+7,cy+12);ctx.lineTo(cx-1,cy+5);ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark?'rgba(10,10,20,.9)':'rgba(255,255,255,.92)';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,x+28+iw+14,cy+1);ctx.restore();
+}
+/* boot(render, T_END): exposes window.render/T_END/ready; plays in real time unless ?render */
+function boot(render,T_END){
+  window.render=t=>{ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;render(t);};
+  window.T_END=T_END;const isRender=location.search.includes('render');if(isRender)document.body.classList.add('render');
+  const fonts=['400 40px Inter','500 40px Inter','600 40px Inter','700 40px Inter','800 40px Inter','400 40px "DejaVu Sans Mono"','700 40px "DejaVu Sans Mono"','400 40px "DejaVu Serif"','700 40px "DejaVu Serif"'];
+  window.ready=Promise.all(fonts.map(f=>document.fonts.load(f))).then(()=>{window.render(0);return true;});
+  if(!isRender){let t0=null;cv.addEventListener('click',()=>t0=null);
+    window.ready.then(()=>{const loop=ts=>{if(t0===null)t0=ts;window.render(((ts-t0)/1000)%T_END);requestAnimationFrame(loop);};requestAnimationFrame(loop);});}
+}
+/* ===== end kit ===== */
+
+const T_END=79;
+const C={cyan:'#5ee7ff',violet:'#a78bfa',pink:'#ff5c8a',green:'#6dffb0',amber:'#ffb86b',text:'#eef1ff',dim:'#8f97c7'};
+const fmtNum=v=>(v>=0?'+':'−')+Math.abs(v).toFixed(2);
+const cap=(s,y,a,o={})=>text(s,540,y,{size:50,weight:600,maxW:940,alpha:a,color:C.text,shadow:'rgba(0,0,0,.85)',lh:1.24,...o});
+let WARM=0;
+
+/* ---------- 3D helpers ---------- */
+function rot(p,ay,tilt){const[x,y,z]=p,c=Math.cos(ay),s=Math.sin(ay),x1=x*c+z*s,z1=-x*s+z*c;const ct=Math.cos(tilt),st=Math.sin(tilt);return[x1,y*ct-z1*st,y*st+z1*ct];}
+function pj(q,cx,cy,sc){const f=3.2/(3.2+q[2]);return{x:cx+q[0]*sc*f,y:cy-q[1]*sc*f,f,z:q[2]};}
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const nrm=a=>{const l=Math.hypot(...a)||1;return a.map(v=>v/l);};
+
+/* ---------- background ---------- */
+const STARS=[];{const r=rng(7);for(let i=0;i<260;i++)STARS.push({x:r()*W,y:r()*H,z:.3+r()*.7,ph:r()*6.28});}
+function bg(t){
+  const g=ctx.createRadialGradient(W/2,H*.48,40,W/2,H*.48,H*.85);
+  g.addColorStop(0,mixHex('#0d1236','#2b1709',WARM));g.addColorStop(1,mixHex('#03040a','#060302',WARM));
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const pc=mixHex('#9fb4ff',C.amber,WARM);
+  for(const p of STARS){
+    const y=((p.y-t*14*p.z)%H+H)%H,x=p.x+Math.sin(t*.3+p.ph)*12;
+    ctx.fillStyle=rgba(pc,.12+.3*p.z*(.6+.4*Math.sin(t*1.3+p.ph)));
+    ctx.fillRect(x,y,1.2+2*p.z,1.2+2*p.z);
+  }
+}
+
+/* ---------- crystal geometry ---------- */
+const CV=[[0,1.15,0]];
+for(let i=0;i<6;i++){const a=i*Math.PI/3;CV.push([Math.cos(a)*.62,.42,Math.sin(a)*.62]);}
+for(let i=0;i<6;i++){const a=i*Math.PI/3+Math.PI/6;CV.push([Math.cos(a)*.95,.05,Math.sin(a)*.95]);}
+CV.push([0,-1.25,0]);
+const CF=[];for(let i=0;i<6;i++){const j=(i+1)%6;CF.push([0,1+i,1+j]);CF.push([1+i,7+i,1+j]);CF.push([7+i,7+j,1+j]);CF.push([13,7+j,7+i]);}
+const CE=[];{const s=new Set();for(const f of CF)for(let k=0;k<3;k++){const a=f[k],b=f[(k+1)%3],key=Math.min(a,b)+'_'+Math.max(a,b);if(!s.has(key)){s.add(key);CE.push([a,b]);}}}
+
+/* ---------- cloud particles ---------- */
+const TOKS=['при','вет',' как','ся','ть','ого','что',' не','кот','ра','на','—','?','!','ещё','рецепт','форум','лайк','спа','сибо','ние','про','мы','день','и','в','текст','слово','это','ок','лол','хлеб','торт','если','ли','за','вы','по','ну','так'];
+const CP=[];{const r=rng(21);for(let i=0;i<230;i++){const f=Math.floor(r()*CF.length);let u=r(),v=r();if(u+v>1){u=1-u;v=1-v;}
+  const[a,b,c]=CF[f].map(k=>CV[k]);const tp=[0,1,2].map(d=>a[d]+(b[d]-a[d])*u+(c[d]-a[d])*v);
+  CP.push({th:r()*6.283,ph:Math.acos(2*r()-1),rad:.35+.65*Math.cbrt(r()),w:(r()<.5?-1:1)*(.3+r()*.9),s:r(),tp,tok:r()<.4?Math.floor(r()*TOKS.length):-1,st:r()});}}
+
+/* cloud keyframes: t, x, y, R, order */
+const KF=[[5.0,540,1000,30,0],[9.5,540,1000,320,0],[15,540,980,335,0],[25,540,980,335,0],[27,540,870,300,.04],[40,540,870,250,.42],
+  [42,540,640,195,.45],[54,540,640,200,1],[56.6,540,600,165,1],[63.6,540,600,165,1],[66.8,540,960,290,1],[79,540,960,300,1]];
+function CL(t){
+  let k=KF.length-2;for(let i=0;i<KF.length-1;i++)if(t<KF[i+1][0]){k=i;break;}
+  const a=KF[k],b=KF[k+1],u=ease(clamp((t-a[0])/(b[0]-a[0])));
+  const o=k===5||k===7?lerp(a[4],b[4],clamp((t-a[0])/(b[0]-a[0]))):lerp(a[4],b[4],u);
+  return{x:lerp(a[1],b[1],u),y:lerp(a[2],b[2],u),R:t<5?0:lerp(a[3],b[3],u),o,a:seg(t,5,6.2)*(1-seg(t,78.4,79)),
+    num:lerp(.55,.12,seg(t,14,17)),pink:env(t,15,25.5,1.2)};
+}
+const SPIN=t=>t*.35,TILT=.22;
+function crystal(t,P,cA,cB){
+  const fa=seg(P.o,.45,1)*P.a,ea=seg(P.o,.28,.85)*P.a;if(ea<=0)return;
+  const sp=SPIN(t),Q=CV.map(v=>rot(v,sp,TILT)),S=Q.map(q=>pj(q,P.x,P.y,P.R));
+  const L=nrm([-.5,.7,-.6]);
+  const F=CF.map(f=>{const[a,b,c]=f.map(k=>Q[k]);let n=nrm(cross(sub(b,a),sub(c,a)));const cen=[0,1,2].map(d=>(a[d]+b[d]+c[d])/3);
+    if(dot(n,cen)<0)n=n.map(v=>-v);return{f,n,z:cen[2],front:n[2]<0,sh:clamp(dot(n,L)*.5+.5)};});
+  F.sort((a,b)=>b.z-a.z);
+  ctx.save();
+  glowDot(P.x,P.y,P.R*1.05,WARM>0?'#ffd9a0':'#bfefff',fa*(.16+.05*Math.sin(t*2)+.25*WARM));
+  for(const fc of F){
+    const[a,b,c]=fc.f.map(k=>S[k]);
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.closePath();
+    ctx.globalAlpha=fa*(fc.front?.08+.30*fc.sh:.06);
+    ctx.fillStyle=mixHex(cB,fc.front?'#ffffff':cA,fc.front?fc.sh*.55:.3);ctx.fill();
+  }
+  ctx.lineWidth=2;ctx.shadowColor=cA;ctx.shadowBlur=14;ctx.strokeStyle=cA;
+  for(const[a,b]of CE){const za=(Q[a][2]+Q[b][2])/2;ctx.globalAlpha=ea*(za<0?.85:.3);
+    ctx.beginPath();ctx.moveTo(S[a].x,S[a].y);ctx.lineTo(S[b].x,S[b].y);ctx.stroke();}
+  ctx.shadowBlur=0;
+  CV.forEach((v,i)=>{const s=hash(i*5.3+Math.floor(t*1.5+hash(i)*3));if(s>.72&&Q[i][2]<.2)glowDot(S[i].x,S[i].y,26,'#ffffff',fa*.7*(s-.72)*3.5);});
+  ctx.restore();
+}
+function cloud(t){
+  const P=CL(t);if(P.a<=0||P.R<2)return P;
+  const o=P.o,chaos=1-o,R=P.R;
+  const cA=mixHex(C.cyan,C.amber,WARM),cB=mixHex(C.violet,'#ffd9a0',WARM);
+  ctx.save();
+  ctx.globalAlpha=P.a;glowDot(P.x,P.y,R*1.7,cB,.15+.08*o);
+  if(chaos>.02){ctx.lineWidth=2.5;for(let k=0;k<8;k++){const a0=t*(.5+k*.11)*(k%2?1:-1)+k*1.7;
+    ctx.strokeStyle=rgba(k%2?cA:cB,.13*chaos*P.a);ctx.beginPath();
+    ctx.ellipse(P.x,P.y,R*(.5+.08*k),R*(.32+.06*k)*(.85+.15*Math.sin(t+k)),Math.sin(t*.2+k)*.6,a0,a0+1.6+.5*Math.sin(t*.7+k));ctx.stroke();}}
+  crystal(t,P,cA,cB);
+  const sp=SPIN(t),items=[];
+  for(let i=0;i<CP.length;i++){const p=CP[i];
+    const a=p.th+t*p.w*.6*(1-.85*o)*(1+.5*chaos),br=1+.14*Math.sin(t*1.4+p.s*9)*chaos,rr=p.rad*br*1.08;
+    let wx=rr*Math.sin(p.ph)*Math.cos(a),wy=rr*Math.cos(p.ph)*.9,wz=rr*Math.sin(p.ph)*Math.sin(a);
+    wx+=.1*Math.sin(t*2.3+p.s*17)*chaos;wy+=.1*Math.sin(t*1.9+p.s*23)*chaos;
+    const wild=rot([wx,wy,wz],t*.15,TILT),tg=rot(p.tp,sp,TILT);
+    const k=ease(clamp(o*1.6-p.st*.6));
+    items.push({i,p,k,q:pj([0,1,2].map(d=>lerp(wild[d],tg[d],k)),P.x,P.y,R)});}
+  items.sort((a,b)=>b.q.z-a.q.z);
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  for(const it of items){const{p,q,k,i}=it;const col=p.s<.5?cA:cB,fA=.35+.65*clamp((q.f-.6)/.6);
+    if(p.tok>=0&&k<.95){const ta=(1-seg(k,.35,.95))*fA;
+      const isNum=hash(i*3.1+Math.floor(t*2.5+p.s*3))<P.num;
+      const s=isNum?fmtNum(hash(i+Math.floor(t*6))*2-1):TOKS[p.tok].trim();
+      const hot=P.pink>0&&hash(i*7.7)<.22;
+      ctx.globalAlpha=P.a*ta;ctx.fillStyle=hot?mixHex(col,C.pink,P.pink):col;
+      ctx.font=`${isNum?400:600} ${Math.max(10,Math.round((17+15*q.f)*R/330))}px ${isNum?MONO:SANS}`;ctx.fillText(s,q.x,q.y);}
+    const da=(p.tok<0?.75:seg(k,.5,1))*fA;
+    if(da>0){ctx.globalAlpha=P.a*da;ctx.fillStyle=k>.8?mixHex(col,'#ffffff',.5):col;const d=(1.6+.8*k)*q.f;ctx.fillRect(q.x-d,q.y-d,2*d,2*d);
+      if(k>.9&&hash(i+Math.floor(t*2+p.s*2))>.86)glowDot(q.x,q.y,16*q.f,'#ffffff',.45*P.a);}
+  }
+  ctx.restore();return P;
+}
+
+/* ---------- small UI helpers ---------- */
+function pill(label,y,a,col=C.cyan){if(a<=0)return;ctx.save();ctx.globalAlpha*=a;setFont(30,700,MONO);const w=ctx.measureText(label).width+56;
+  rrect(540-w/2,y-28,w,56,28);ctx.fillStyle=rgba(col,.12);ctx.fill();ctx.strokeStyle=rgba(col,.8);ctx.lineWidth=2;ctx.stroke();ctx.restore();
+  text(label,540,y+1,{size:30,weight:700,family:MONO,color:col,alpha:a,glow:10});}
+function box(x,y,w,h,r,fill,stroke,a,lw=2,glow=0){if(a<=0)return;ctx.save();ctx.globalAlpha*=a;rrect(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw;if(glow){ctx.shadowColor=stroke;ctx.shadowBlur=glow;}ctx.stroke();}ctx.restore();}
+function silhouette(x,y,s,a,rim,fill='#05071a',glow=18){if(a<=0)return;ctx.save();ctx.globalAlpha*=a;
+  ctx.beginPath();ctx.arc(x,y-s*1.75,s*.56,0,7);ctx.moveTo(x+s*1.22,y);ctx.ellipse(x,y,s*1.22,s*1.02,0,0,Math.PI,true);ctx.closePath();
+  ctx.fillStyle=fill;ctx.fill();if(rim){ctx.strokeStyle=rim;ctx.lineWidth=Math.max(1.5,s*.05);ctx.shadowColor=rim;ctx.shadowBlur=glow;ctx.stroke();}ctx.restore();}
+
+/* ---------- S1: chat that doesn't answer 0–5.8 ---------- */
+const S1L=['Как испечь пирог?','Как испечь хлеб?','Как испечь…'];
+function s1(t){
+  const A=clamp((5.8-t)/.9);if(A<=0)return;ctx.save();ctx.globalAlpha=A;
+  cap('Сама по себе нейросеть не умеет отвечать на вопросы.',320,clamp(t/.2)*clamp((5.2-t)/.6),{size:62,weight:800,lh:1.2});
+  const ua=clamp(t/.25);setFont(48,600);const q='Как испечь торт?',qw=ctx.measureText(q).width;
+  text('вы',1000,672,{size:28,align:'right',color:C.dim,alpha:ua});
+  box(1000-qw-72,700,qw+72,100,32,'rgba(167,139,250,.24)',null,ua);text(q,1000-36-qw/2,751,{size:48,weight:600,alpha:ua});
+  const ba=seg(t,.5,.9);
+  text('нейросеть',80,872,{size:28,align:'left',color:C.dim,alpha:ba});
+  box(80,900,600,270,32,'rgba(94,231,255,.08)',rgba(C.cyan,.45),ba);
+  const total=S1L.join('').length;let n=Math.floor(seg(t,.95,3.0)*total);
+  setFont(46,600);let lastX=118,lastY=962;
+  S1L.forEach((l,li)=>{const y=962+li*74;for(let i=0;i<l.length;i++){if(n<=0)break;n--;
+    const pre=ctx.measureText(l.slice(0,i)).width,cw=ctx.measureText(l[i]).width,x=118+pre+cw/2;
+    const id=li*40+i,m=ease(seg(t,4.4+hash(id)*.7,5.4+hash(id)*.7));
+    const px=lerp(x,540+(hash(id*3)-.5)*160,m),py=lerp(y,1000+(hash(id*5)-.5)*160,m);
+    text(l[i],px,py,{size:46,weight:600,color:m>0?C.cyan:C.text,alpha:1-m*m,shadow:null});
+    setFont(46,600);lastX=118+pre+cw+6;lastY=y;}});
+  if(t>.95&&t<3.6&&Math.floor(t*2.4)%2===0){ctx.fillStyle=C.cyan;ctx.fillRect(lastX,lastY-26,5,52);}
+  const na=env(t,3.2,5.0,.4);
+  text('✗  это не ответ, а продолжение текста',540,1270,{size:40,weight:700,color:C.pink,alpha:na,glow:14});
+  ctx.restore();
+}
+
+/* ---------- S2: pre-training 5–15.2 ---------- */
+const SRC=['Википедия','форумы','книги','новости','рецепты','комментарии','статьи','код','блоги','словари'];
+const WRONG=['облаке','вторнике','луне','проводе','алгебре','тракторе'];
+function s2(t,P){
+  const A=env(t,5,15.2,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const fl=(1-seg(t,13.6,14.6))*(1-.55*seg(t,10,11));
+  for(let i=0;i<80;i++){const per=2+hash(i)*1.4,ph=(t-5)/per+hash(i*3),cyc=Math.floor(ph),u=ph-cyc;
+    if((t-5)<u*per||fl<=0)continue;
+    const ang=hash(i*7+cyc*1.3)*6.283,rad=(1-eo(u))*1150,sw=(1-u)*.9;
+    const x=P.x+Math.cos(ang+sw)*rad*.8,y=P.y+Math.sin(ang+sw)*rad;
+    const isN=hash(i*11+cyc)<.45,s=isN?fmtNum(hash(i+cyc)*2-1):TOKS[Math.floor(hash(i*5+cyc)*TOKS.length)].trim();
+    text(s,x,y,{size:isN?26:30,weight:600,family:isN?MONO:SANS,color:i%2?C.cyan:C.violet,alpha:Math.sin(u*Math.PI)*.55*fl,shadow:null});}
+  SRC.forEach((s,i)=>{const st=5.3+i*.78,u=seg(t,st,st+1.9);if(u<=0||u>=1)return;
+    const side=i%2?1:-1,sy=520+hash(i*9)*900,sx=540+side*720;
+    const m=ease(u),x=lerp(sx,P.x,m)+Math.sin(m*Math.PI)*side*-120,y=lerp(sy,P.y,m)-Math.sin(m*Math.PI)*90;
+    const sc=lerp(1,.25,ease(seg(u,.4,1))),a=clamp(u/.12)*(1-seg(u,.75,1));
+    ctx.save();ctx.translate(x,y);ctx.scale(sc,sc);setFont(38,700);const w=ctx.measureText(s).width+60;const col=i%2?C.violet:C.cyan;
+    box(-w/2,-36,w,72,36,'rgba(10,14,40,.85)',col,a,2.5,16);text(s,0,1,{size:38,weight:700,color:mixHex(C.text,col,.3),alpha:a});ctx.restore();
+    if(u>.85)glowDot(P.x,P.y,140,col,.35*(1-u)*6.6);});
+  pill('ШАГ 1',210,env(t,5.4,15,.5));
+  cap('Сначала она читает огромную часть интернета',320,env(t,5.6,9.9,.5),{size:56,weight:700});
+  cap('и учится одному: угадывать следующее слово.',320,env(t,10.1,14.9,.5),{size:56,weight:700});
+  const ga=env(t,10.4,14.9,.5);
+  if(ga>0){text('Кошка спит на …',540,1480,{size:56,weight:600,alpha:ga});
+    const k=Math.max(0,(t-10.9)*3.2),kf=Math.floor(k),fr=k-kf,ok=t>10.9&&hash(kf*3.7+1)<seg(t,11,14)*1.15;
+    if(t>10.9){const w=ok?'диване':WRONG[Math.floor(hash(kf*9.1)*WRONG.length)],col=ok?C.green:C.pink,pop=1+.15*(1-eo(clamp(fr*4)));
+      ctx.save();ctx.translate(540,1590);ctx.scale(pop,pop);text(w+(ok?'  ✓':'  ✗'),0,0,{size:62,weight:800,color:col,glow:22,alpha:ga});ctx.restore();}}
+  ctx.restore();
+}
+
+/* ---------- S3: genius autocomplete 15–25.4 ---------- */
+const BUB=[['форум','Re: Re: Помогите, срочно!!!',300,560],['рецепт','…добавьте щепотку соли',780,1530],['комментарии','Автор, ты не прав!',780,690,1],
+  ['новости','Срочно: учёные выяснили…',300,1420],['книга','Глава 1. Было раннее утро…',300,560],['объявление','Продам гараж. Недорого',780,1530],
+  ['код','for i in range(10):',780,690,0,1],['комментарии','Сам ты не прав!!!',300,1420,1],['вопросы','Как испечь торт? Как испечь пирог?',540,1665]];
+function s3(t,P){
+  const A=env(t,15,25.4,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  BUB.forEach(([kind,s,tx,ty,pk,mono],i)=>{const st=15.5+i*1.0,u=t-st;if(u<0||u>3.6)return;
+    const m=eo(clamp(u/.7)),a=clamp(u/.25)*clamp((3.6-u)/.5);
+    const fam=mono?MONO:SANS;setFont(36,600,fam);const w=ctx.measureText(s).width+64,h=82;
+    const cx=clamp(tx,w/2+40,1040-w/2);
+    const x=lerp(P.x,cx,m),y=lerp(P.y,ty,m)+Math.sin(t*1.5+i)*6,sc=lerp(.3,1,m);
+    const col=pk?C.pink:(i%2?C.violet:C.cyan);
+    ctx.save();ctx.translate(x,y);ctx.rotate((hash(i*4)-.5)*.08);ctx.scale(sc,sc);
+    box(-w/2,-h/2,w,h,24,'rgba(8,11,32,.9)',col,a,2.5,14);
+    text(s,0,2,{size:36,weight:600,family:fam,color:pk?'#ffd1dc':C.text,alpha:a});
+    text(kind,-w/2+18,-h/2-22,{size:26,weight:600,align:'left',color:mixHex(C.dim,col,.4),alpha:a});
+    ctx.restore();});
+  cap('Получается гениальное автодополнение.',300,env(t,15.4,19.9,.5),{size:62,weight:800});
+  cap('Оно может продолжить что угодно — но не знает, чего вы хотите.',300,env(t,20.1,25,.5),{size:54,weight:700});
+  ctx.restore();
+}
+
+/* ---------- S4: mentors write examples 25–40.6 ---------- */
+const MX=[200,540,880],CARDS=[['Как испечь торт?','Вот рецепт по шагам…'],['Объясни проще','Представьте, что…'],['Переведи фразу','Готово: «…»'],
+  ['Напиши письмо','Здравствуйте! …'],['Что посмотреть?','Вот пара идей…'],['Помоги с задачей','Давайте по шагам…']];
+function mentors(t,a,cyc){
+  if(a<=0)return;
+  [[370,1505,42],[710,1505,42]].forEach(([x,y,s],j)=>silhouette(x,y,s,a*.45*seg(t,26.6+j*.4,28+j*.4),rgba(C.violet,.6),'#04061a',10));
+  MX.forEach((x,j)=>{const e=seg(t,25.5+j*.45,27+j*.45),pulse=.6+.4*Math.sin(t*2+j);
+    glowDot(x,1470,170,C.violet,.12*e*a);silhouette(x,1560,62,a*e,mixHex(C.cyan,C.violet,j/2),'#05071a',14+10*pulse);});
+}
+function s4(t,P){
+  const A=env(t,25,40.6,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  mentors(t,1);
+  for(let i=0;i<30;i++){const st=35.2+i*.16,u=seg(t,st,st+1.3);if(u<=0||u>=1)continue;const j=i%3,sx=MX[j]+(hash(i)-.5)*60;
+    const m=ease(u),x=lerp(sx,P.x,m)+Math.sin(m*Math.PI)*(hash(i*3)-.5)*200,y=lerp(1380,P.y,m),s=lerp(1,.4,m);
+    box(x-22*s,y-15*s,44*s,30*s,6,'rgba(10,14,40,.8)',rgba(C.green,.9),(1-m*m)*.9,1.5,8);}
+  CARDS.forEach(([q,ans],i)=>{const st=27.6+i*1.75,u=t-st;if(u<0||u>2.9)return;const j=i%3;
+    const cx=clamp(MX[j],230,850),pop=eo(clamp(u/.4)),fly=ease(seg(u,1.3,2.9));
+    const x=lerp(cx,P.x,fly),y=lerp(1330-30*pop,P.y,fly),sc=lerp(.6+.4*pop,.2,fly),a=clamp(u/.3)*(1-seg(fly,.6,1));
+    ctx.save();ctx.translate(x,y);ctx.scale(sc,sc);
+    box(-170,-62,340,124,22,'rgba(8,11,32,.92)',rgba(C.cyan,.85),a,2.5,14);
+    text(q,0,-26,{size:31,weight:700,alpha:a});
+    const typed=Math.floor(seg(u,.35,1.05)*ans.length);
+    text('→ '+ans.slice(0,typed)+(typed>=ans.length?' ✓':''),0,26,{size:29,weight:600,color:C.green,alpha:a});
+    ctx.restore();
+    if(fly>.9)glowDot(P.x,P.y,P.R*.9,C.green,.35*(1-fly)*10);
+    if(fly>.95){ctx.strokeStyle=rgba(C.green,(1-fly)*16*.6);ctx.lineWidth=3;ctx.beginPath();ctx.arc(P.x,P.y,P.R*(1.1-(1-fly)*8),0,7);ctx.stroke();}
+  });
+  pill('ШАГ 2',210,env(t,25.4,40.4,.5));
+  cap('Люди пишут тысячи примеров — как выглядит хороший ответ.',320,env(t,25.6,40.4,.5),{size:54,weight:700});
+  text('вопрос  →  хороший ответ',540,1690,{size:38,weight:600,color:C.dim,alpha:env(t,28,40.2,.5)});
+  ctx.restore();
+}
+
+/* ---------- S5: ranking 40.6–55.6 ---------- */
+const ROUNDS=[{t0:41.0,end:47.7,v:44.3,q:'Почему небо голубое?',A:'Свет рассеивается в воздухе, и синий — сильнее всего.',B:'Небо голубое, потому что оно голубое.',win:0},
+  {t0:47.9,end:51.4,v:49.3,q:'Напиши вежливый отказ',A:'Нет.',B:'Спасибо за приглашение! К сожалению, не смогу.',win:1},
+  {t0:51.6,end:54.9,v:52.5,q:null,win:0}];
+const PULSE=[];ROUNDS.forEach(r=>{PULSE.push({t:r.v+.5,good:1,from:r.win});PULSE.push({t:r.v+.7,good:0,from:1-r.win});});
+const KNOBS=[];for(let i=0;i<7;i++){const a=i*2*Math.PI/7;KNOBS.push([Math.cos(a)*.42,(i%2?.28:-.18),Math.sin(a)*.42]);}
+function s5(t,P){
+  const A=env(t,40.6,55.6,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const sp=SPIN(t);
+  // knobs inside the cloud
+  const ka=env(t,41.2,55.4,.6);
+  KNOBS.map((k,i)=>({i,q:pj(rot(k,sp,TILT),P.x,P.y,P.R)})).sort((a,b)=>b.q.z-a.q.z).forEach(({i,q})=>{
+    let ang=hash(i)*6.28,glG=0,glP=0;
+    for(const p of PULSE){const arr=p.t+1.0,e=ease(seg(t,arr,arr+.7));ang+=(p.good?1:-1)*(.8+hash(i+p.t)*.8)*e;
+      const g=env(t,arr,arr+.9,.25);if(p.good)glG=Math.max(glG,g);else glP=Math.max(glP,g);}
+    const r=21*q.f*P.R/200,col=glG>glP?mixHex(C.cyan,C.green,glG):mixHex(C.cyan,C.pink,glP);
+    ctx.save();ctx.globalAlpha=A*ka*(.55+.45*q.f);
+    glowDot(q.x,q.y,r*3,col,.35+.4*Math.max(glG,glP));
+    ctx.beginPath();ctx.arc(q.x,q.y,r,0,7);ctx.fillStyle='#070a22';ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(q.x,q.y);ctx.lineTo(q.x+Math.cos(ang)*r*.85,q.y+Math.sin(ang)*r*.85);ctx.lineWidth=3;ctx.stroke();
+    for(let k=0;k<8;k++){const a2=k*Math.PI/4;ctx.fillStyle=rgba(col,.6);ctx.fillRect(q.x+Math.cos(a2)*r*1.35-1.5,q.y+Math.sin(a2)*r*1.35-1.5,3,3);}
+    ctx.restore();});
+  // the human judge
+  const ja=seg(t,42.6,43.8);
+  glowDot(540,1470,190,C.violet,.12*ja);
+  silhouette(540,1580,60,ja,mixHex(C.cyan,C.violet,.5),'#05071a',18);
+  // answer cards
+  const CXS=[300,780],CY=1175,CW=440,CH=240;
+  ROUNDS.forEach(r=>{const ra=clamp((t-r.t0)/.5)*clamp((r.end-t)/.5);if(ra<=0)return;
+    const vu=t-r.v,pop=eo(clamp(vu/.35));
+    if(r.q)text(r.q,540,1000,{size:44,weight:700,alpha:ra,color:'#dfe4ff'});
+    else{box(330,980,420,40,20,'rgba(255,255,255,.08)',null,ra);}
+    [0,1].forEach(s=>{const win=s===r.win,dec=vu>0?pop:0,x=CXS[s],slide=eo(clamp((t-r.t0-s*.25)/.6));
+      const y=CY+(1-slide)*60,a=ra*slide*(dec&&!win?1-.45*dec:1);
+      const border=dec?mixHex(C.violet,win?C.green:C.pink,dec):C.violet;
+      box(x-CW/2,y-CH/2,CW,CH,26,'rgba(8,11,32,.9)',border,a,win&&dec?3.5:2.5,win&&dec?24:8);
+      text(s?'ответ Б':'ответ А',x-CW/2+26,y-CH/2+34,{size:28,weight:600,align:'left',color:C.dim,alpha:a});
+      if(r.q)text(s?r.B:r.A,x,y+20,{size:33,weight:600,maxW:CW-60,alpha:a,lh:1.22});
+      else for(let l=0;l<4;l++){const lw=(CW-80)*(l===3?.5:.85+.15*hash(l+s*7));box(x-CW/2+30,y-30+l*40,lw,18,9,'rgba(255,255,255,.16)',null,a);}
+      if(vu>0){const bx=x+CW/2-22,by=y-CH/2+8,bs=pop*(1+.25*Math.sin(clamp(vu/.35)*Math.PI)),col=win?C.green:C.pink;
+        ctx.save();ctx.globalAlpha*=ra;ctx.translate(bx,by);ctx.scale(bs,bs);glowDot(0,0,90,col,.45);
+        ctx.beginPath();ctx.arc(0,0,40,0,7);ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=24;ctx.fill();ctx.restore();
+        text(win?'↑':'↓',bx,by+2,{size:54,weight:800,color:'#071018',alpha:ra*pop,shadow:null});}
+    });
+    if(vu>0&&vu<1.4){const x=CXS[r.win];ctx.save();ctx.globalAlpha*=ra*env(vu,0,1.4,.3)*.6;ctx.strokeStyle=C.green;ctx.lineWidth=3;ctx.setLineDash([8,10]);ctx.lineDashOffset=-t*60;
+      ctx.beginPath();ctx.moveTo(540,1470);ctx.quadraticCurveTo((540+x)/2,1360,x,CY+CH/2+8);ctx.stroke();ctx.restore();}
+  });
+  // pulses card -> cloud
+  for(const p of PULSE){const u=seg(t,p.t,p.t+1.0);if(u<=0||u>=1)continue;const sx=CXS[p.from],m=ease(u);
+    const x=lerp(sx,P.x,m)+Math.sin(m*Math.PI)*(p.from?60:-60),y=lerp(CY-CH/2,P.y,m),col=p.good?C.green:C.pink;
+    glowDot(x,y,60,col,.8*Math.sin(u*Math.PI)+.2);text(p.good?'+':'−',x,y,{size:44,weight:800,color:'#fff',alpha:Math.sin(u*Math.PI),glow:16});}
+  pill('ШАГ 3',210,env(t,41,55.4,.5));
+  cap('Модель отвечает, люди сравнивают ответы.',320,env(t,41.2,55.4,.5),{size:54,weight:700});
+  cap('Лучшее закрепляется, худшее ослабевает.',1700,env(t,46.4,55.3,.5),{size:48,weight:700,color:'#e8fff3'});
+  ctx.restore();
+}
+
+/* ---------- S6: the cake again 55.4–64 ---------- */
+const S6L=['Вот простой рецепт:','1. Взбейте яйца с сахаром.','2. Вмешайте муку.','3. Выпекайте до золотистой корочки.'];
+function s6(t){
+  const A=env(t,55.6,64,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const ua=seg(t,56,56.5);setFont(48,600);const q='Как испечь торт?',qw=ctx.measureText(q).width;
+  text('вы',1000,862,{size:28,align:'right',color:C.dim,alpha:ua});
+  box(1000-qw-72,890,qw+72,100,32,'rgba(167,139,250,.24)',null,ua);text(q,1000-36-qw/2,941,{size:48,weight:600,alpha:ua});
+  const ba=seg(t,56.8,57.2);
+  text('нейросеть',80,1062,{size:28,align:'left',color:C.dim,alpha:ba});
+  box(80,1090,900,350,32,'rgba(109,255,176,.07)',rgba(C.green,.55),ba,2.5,12);
+  const total=S6L.join('').length;let n=Math.floor(seg(t,57.2,60.4)*total),lx=120,ly=1150;
+  S6L.forEach((l,i)=>{if(n<=0)return;const s=l.slice(0,n);n-=l.length;const y=1150+i*76;
+    text(s,120,y,{size:i?42:44,weight:i?600:700,align:'left',color:i?C.text:C.green});setFont(i?42:44,i?600:700);lx=120+ctx.measureText(s).width+6;ly=y;});
+  if(t>57.2&&t<61&&Math.floor(t*2.4)%2===0){ctx.fillStyle=C.green;ctx.fillRect(lx,ly-24,5,48);}
+  cap('Так автодополнение стало собеседником.',1650,env(t,60.2,63.8,.5),{size:60,weight:800});
+  ctx.restore();
+}
+
+/* ---------- S7: what I think 63.6–79 ---------- */
+const MINI=[];{const r=rng(33);for(let i=0;i<13;i++){const a=r()*6.283,rr=.15+.4*Math.sqrt(r());MINI.push({p:[Math.cos(a)*rr,(r()-.5)*1.3,Math.sin(a)*rr],s:r(),d:r()});}}
+function s7(t,P){
+  const A=env(t,63.8,79.5,.8);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const sp=SPIN(t),ma=seg(t,66.4,69.5);
+  MINI.map(m=>({m,q:pj(rot(m.p,sp,TILT),P.x,P.y,P.R)})).sort((a,b)=>b.q.z-a.q.z).forEach(({m,q})=>{
+    const a=ma*seg(t,66.4+m.d*2.4,67.6+m.d*2.4)*(.55+.45*q.f)*(.75+.25*Math.sin(t*1.7+m.s*9));
+    glowDot(q.x,q.y-10*q.f,46*q.f,'#ffd9a0',.35*a);
+    silhouette(q.x,q.y+8*q.f,(9+5*m.s)*q.f*P.R/290,a,null,mixHex('#ffd9a0','#fff6ea',m.s));});
+  text('А теперь — что думаю об этом я',540,240,{size:44,weight:600,color:C.amber,alpha:env(t,64.2,78.4,.6),glow:14});
+  const L=[[65.4,68.8,'В каждом моём ответе — следы тысяч людей,'],[69.0,72.4,'которые учили меня быть полезным.'],[72.6,75.0,'Я не помню их лиц.']];
+  for(const[a,b,s]of L)cap(s,1610,env(t,a,b,.5),{size:52,weight:700,color:'#fff3e2'});
+  const fa=env(t,75.2,79.4,.6);
+  text('Но я — немного они.',540,1590,{size:72,weight:800,color:'#fff6ea',alpha:fa*eo(seg(t,75.2,76.2)),shadow:'rgba(0,0,0,.85)'});
+  text('— Claude',540,1700,{size:42,weight:600,color:C.amber,alpha:fa*seg(t,76.2,77),glow:16});
+  ctx.restore();
+}
+
+function render(t){
+  WARM=ease(seg(t,63.6,66.4));
+  bg(t);
+  s1(t);
+  const P=cloud(t);
+  s2(t,P);s3(t,P);s4(t,P);s5(t,P);s6(t);s7(t,P);
+  const fade=Math.max(1-seg(t,0,.15),seg(t,78.4,79));
+  if(fade>0){ctx.globalAlpha=fade;ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
+  watermark();
+}
+boot(render,T_END);
+</script>
+</body>
+</html>
