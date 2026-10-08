@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Уверенно врёт</title>
+<style>
+  html,body{margin:0;height:100%;background:#03040a;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{display:block;height:100vh;max-width:100vw;aspect-ratio:9/16}
+  body.render canvas{height:auto;width:1080px}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+/* ===== AI-Reels common kit (paste verbatim into each video's <script>) ===== */
+const W=1080,H=1920;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const SANS='Inter, "DejaVu Sans", sans-serif', MONO='"DejaVu Sans Mono", monospace', SERIF='"DejaVu Serif", Georgia, serif';
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const eo=t=>1-Math.pow(1-t,3);
+const seg=(t,a,b)=>clamp((t-a)/(b-a));
+const env=(t,a,b,f=.5)=>clamp((t-a)/f)*clamp((b-t)/f);
+const hash=n=>{const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);};
+function rng(seed){let s=seed>>>0||1;return()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296;};}
+function hex(h){const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255];}
+function mixHex(a,b,t){const A=hex(a),B=hex(b);return'#'+A.map((v,i)=>Math.round(lerp(v,B[i],t)).toString(16).padStart(2,'0')).join('');}
+function rgba(h,a){const[r,g,b]=hex(h);return`rgba(${r},${g},${b},${a})`;}
+function setFont(size,weight=500,family=SANS){ctx.font=`${weight} ${size}px ${family}`;}
+function wrap(s,maxW){const out=[];for(const para of String(s).split('\n')){const words=para.split(' ');let line='';
+  for(const w of words){const test=line?line+' '+w:w;if(ctx.measureText(test).width>maxW&&line){out.push(line);line=w;}else line=test;}
+  out.push(line);}return out;}
+/* text(s,x,y,{size,weight,color,alpha,align,family,maxW,lh,glow,shadow}) – multi-line centered vertically on y */
+function text(s,x,y,o={}){
+  const{size=48,weight=500,color='#fff',alpha=1,align='center',family=SANS,maxW=0,lh=1.25,glow=0,shadow='rgba(0,0,0,.8)'}=o;
+  if(alpha<=.002)return;
+  ctx.save();ctx.globalAlpha*=alpha;ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='middle';
+  setFont(size,weight,family);ctx.shadowColor=glow?color:shadow;ctx.shadowBlur=glow||(shadow?16:0);
+  const lines=maxW?wrap(s,maxW):String(s).split('\n');const off=(lines.length-1)*size*lh/2;
+  lines.forEach((l,i)=>ctx.fillText(l,x,y-off+i*size*lh));ctx.restore();
+}
+function rrect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+function glowDot(x,y,r,color,a){if(a<=0)return;const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,rgba(color,a));g.addColorStop(1,rgba(color,0));ctx.fillStyle=g;ctx.fillRect(x-r,y-r,2*r,2*r);}
+/* film grain / noise overlay, deterministic per frame */
+const _grain=(()=>{const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');const d=g.createImageData(256,256);const r=rng(99);
+  for(let i=0;i<d.data.length;i+=4){const v=r()*255;d.data[i]=d.data[i+1]=d.data[i+2]=v;d.data[i+3]=255;}g.putImageData(d,0,0);return c;})();
+function grain(t,alpha=.08,mode='overlay'){ctx.save();ctx.globalAlpha=alpha;ctx.globalCompositeOperation=mode;
+  const ox=Math.floor(hash(Math.floor(t*24))*256),oy=Math.floor(hash(Math.floor(t*24)+7)*256);
+  ctx.translate(-ox,-oy);ctx.fillStyle=ctx.createPattern(_grain,'repeat');ctx.fillRect(0,0,W+256,H+256);ctx.restore();}
+/* Channel watermark – call LAST in render(t), every frame. dark=true for light backgrounds */
+function watermark(dark=false){
+  const label='t.me/eventstory_by';ctx.save();ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;
+  setFont(34,700);const tw=ctx.measureText(label).width,iw=46,pw=tw+iw+56,ph=68,x=540-pw/2,y=1812;
+  rrect(x,y,pw,ph,34);ctx.fillStyle=dark?'rgba(255,255,255,.7)':'rgba(8,10,24,.55)';ctx.fill();
+  ctx.strokeStyle=dark?'rgba(0,0,0,.25)':'rgba(255,255,255,.28)';ctx.lineWidth=2;ctx.stroke();
+  const cx=x+28+iw/2,cy=y+ph/2;ctx.fillStyle='#2aabee';ctx.beginPath();ctx.arc(cx,cy,iw/2,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(cx-13,cy+1);ctx.lineTo(cx+12,cy-10);ctx.lineTo(cx+7,cy+12);ctx.lineTo(cx-1,cy+5);ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark?'rgba(10,10,20,.9)':'rgba(255,255,255,.92)';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,x+28+iw+14,cy+1);ctx.restore();
+}
+/* boot(render, T_END): exposes window.render/T_END/ready; plays in real time unless ?render */
+function boot(render,T_END){
+  window.render=t=>{ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;render(t);};
+  window.T_END=T_END;const isRender=location.search.includes('render');if(isRender)document.body.classList.add('render');
+  const fonts=['400 40px Inter','500 40px Inter','600 40px Inter','700 40px Inter','800 40px Inter','400 40px "DejaVu Sans Mono"','700 40px "DejaVu Sans Mono"','400 40px "DejaVu Serif"','700 40px "DejaVu Serif"'];
+  window.ready=Promise.all(fonts.map(f=>document.fonts.load(f))).then(()=>{window.render(0);return true;});
+  if(!isRender){let t0=null;cv.addEventListener('click',()=>t0=null);
+    window.ready.then(()=>{const loop=ts=>{if(t0===null)t0=ts;window.render(((ts-t0)/1000)%T_END);requestAnimationFrame(loop);};requestAnimationFrame(loop);});}
+}
+/* ===== end kit ===== */
+
+const T_END=80;
+const C={cyan:'#5ee7ff',violet:'#a78bfa',pink:'#ff5c8a',green:'#6dffb0',amber:'#ffb86b',text:'#eef1ff',dim:'#8f97c7'};
+const mix=(a,b,t)=>mixHex(a,b,t);
+const cap=(s,y,a,o={})=>text(s,540,y,{size:52,weight:600,maxW:940,alpha:a,color:C.text,shadow:'rgba(0,0,0,.85)',lh:1.25,...o});
+const fmtP=v=>'0.'+String(Math.floor(v*100)).padStart(2,'0');
+
+/* ---------- background (same DNA as the original) ---------- */
+const P=[];{const r=rng(7);for(let i=0;i<260;i++)P.push({x:r()*W,y:r()*H,z:.3+r()*.7,ph:r()*6.28});}
+const WARM0=69.4,WARM1=71.6;
+function bg(t){
+  const warm=ease(seg(t,WARM0,WARM1));
+  const g=ctx.createRadialGradient(W/2,H*.48,40,W/2,H*.48,H*.85);
+  g.addColorStop(0,mix('#0d1236','#2b1709',warm));g.addColorStop(1,mix('#03040a','#060302',warm));
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const pc=mixHex('#9fb4ff',C.amber,warm);
+  for(const p of P){
+    const y=((p.y-t*14*p.z)%H+H)%H,x=p.x+Math.sin(t*.3+p.ph)*12;
+    ctx.fillStyle=rgba(pc,.12+.3*p.z*(.6+.4*Math.sin(t*1.3+p.ph)));
+    ctx.fillRect(x,y,1.2+2*p.z,1.2+2*p.z);
+  }
+}
+/* drifting flickering numbers, like the original title scene */
+const NUMS=[];{const r=rng(3);for(let i=0;i<40;i++)NUMS.push({a:r()*6.28,d:220+r()*520,s:.4+r()*.8,ph:r()*6,v:r()});}
+function driftNums(t,A,col=C.cyan){
+  if(A<=0)return;
+  for(const n of NUMS){const ph=((t*20*n.s+n.ph*50)%300)/300,d=n.d+ph*300,ang=n.a+t*.04*n.s,wa=Math.sin(ph*Math.PI);
+    const v=clamp(n.v*.3+.05*Math.sin(t*n.s*2+n.ph));
+    text(fmtP(v),540+Math.cos(ang)*d,980+Math.sin(ang)*d*1.3,{family:MONO,size:22+10*n.s,color:col,alpha:A*wa*(.08+.18*Math.sin(t*.8+n.ph)**2),shadow:''});}
+}
+
+/* ---------- primitives ---------- */
+function partial(pts,prog){
+  let L=0;const sl=[];for(let i=1;i<pts.length;i++){const l=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);sl.push(l);L+=l;}
+  let rem=L*clamp(prog);ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length&&rem>0;i++){const l=sl[i-1],k=Math.min(1,rem/l);ctx.lineTo(lerp(pts[i-1][0],pts[i][0],k),lerp(pts[i-1][1],pts[i][1],k));rem-=l;}
+}
+function check(x,y,s,col,a,prog=1){
+  if(a<=0)return;ctx.save();ctx.globalAlpha*=a;glowDot(x,y,s*2.2,col,.35);
+  ctx.beginPath();ctx.arc(x,y,s,0,7);ctx.fillStyle=rgba(col,.16);ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=Math.max(2,s*.12);ctx.stroke();
+  partial([[-.45,.02],[-.12,.35],[.48,-.3]].map(([u,v])=>[x+u*s,y+v*s]),prog);
+  ctx.strokeStyle=col;ctx.lineWidth=Math.max(3,s*.18);ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor=col;ctx.shadowBlur=14;ctx.stroke();ctx.restore();
+}
+/* chat bubble. side: 1 = user (right, violet), -1 = bot (left, cyan) */
+function bubble(s,side,y,a,{size=42,maxW=760,typed=1,col}={}){
+  if(a<=0)return 0;setFont(size,500);const lines=wrap(s,maxW);const full=lines.join('\n');
+  const n=Math.floor(full.length*clamp(typed));
+  const bw=Math.max(...lines.map(l=>ctx.measureText(l).width))+70,lh=size*1.3,bh=lines.length*lh+50;
+  const x=side>0?1000-bw:80;const hue=col||(side>0?C.violet:C.cyan);
+  ctx.save();ctx.globalAlpha*=a;rrect(x,y,bw,bh,30);ctx.fillStyle=rgba(hue,side>0?.2:.1);ctx.fill();
+  ctx.strokeStyle=rgba(hue,side>0?.0:.6);ctx.lineWidth=2.5;if(side<0){ctx.shadowColor=hue;ctx.shadowBlur=14;ctx.stroke();}ctx.restore();
+  let left=n;lines.forEach((l,i)=>{const part=l.slice(0,Math.max(0,left));left-=l.length+1;
+    if(part)text(part,x+35,y+25+lh/2+i*lh,{size,weight:500,align:'left',alpha:a});});
+  if(typed<1&&typed>0){setFont(size,500);let li=0,rem=n;while(li<lines.length-1&&rem>lines[li].length){rem-=lines[li].length+1;li++;}
+    const cw=ctx.measureText(lines[li].slice(0,rem)).width;ctx.save();ctx.globalAlpha*=a;ctx.fillStyle=hue;ctx.fillRect(x+38+cw,y+25+li*lh+8,4,lh-16);ctx.restore();}
+  return bh;
+}
+/* probability bars. items: [label,p]. o: {grow, win (index or -1), winK, jit, rowH, x0,bx,bw, col(i), labelSize} */
+function bars(t,y0,items,A,o={}){
+  if(A<=0)return[];const{grow=1,win=-1,winK=0,jit=0,rowH=104,bx=430,bw=530,labelX=110,labelSize=42,winCol=C.cyan,loseDim=.4,hl=-1,hlCol=C.pink,seed=1,colFn=null}=o;
+  const out=[];
+  items.forEach(([lab,p],r)=>{
+    const y=y0+r*rowH,isW=r===win,isH=r===hl;
+    const j=jit*(hash(r*7.3+seed+Math.floor(t*12))-.5)*.06;
+    const v=clamp(p*grow+j,0,1);
+    const a=A*(winK>0&&!isW?lerp(1,loseDim,winK):1);
+    const base=colFn?colFn(r):(r%2?C.violet:'#7f8fd8');
+    const col=isW?mix(base,winCol,winK):(isH?hlCol:base);
+    text(lab,labelX,y,{size:labelSize,weight:isW&&winK>.5?800:600,align:'left',alpha:a,color:isW?mix(C.text,winCol,winK):(isH?mix(C.text,hlCol,.5):C.text),glow:isW?18*winK:0});
+    ctx.save();ctx.globalAlpha*=a;rrect(bx,y-22,bw,44,22);ctx.fillStyle='rgba(255,255,255,.06)';ctx.fill();
+    const w=Math.max(10,bw*v);rrect(bx,y-22,w,44,22);ctx.fillStyle=col;if(isW&&winK>0){ctx.shadowColor=winCol;ctx.shadowBlur=26*winK;}else if(isH){ctx.shadowColor=hlCol;ctx.shadowBlur=14;}ctx.fill();ctx.restore();
+    if(isW&&winK>0)glowDot(bx+w,y,70,winCol,.5*winK*A);
+    out.push({y,w,x:labelX});
+  });
+  return out;
+}
+/* stamp */
+function stamp(s,x,y,a,k,rot=-.12){
+  if(a<=0)return;const sc=lerp(1.8,1,eo(k));ctx.save();ctx.globalAlpha*=a*clamp(k*3);ctx.translate(x,y);ctx.rotate(rot);ctx.scale(sc,sc);
+  setFont(64,800);const w=ctx.measureText(s).width+60;rrect(-w/2,-52,w,104,16);ctx.strokeStyle=C.pink;ctx.lineWidth=6;ctx.shadowColor=C.pink;ctx.shadowBlur=24;ctx.stroke();
+  ctx.fillStyle='rgba(20,6,16,.55)';ctx.fill();ctx.fillStyle=rgba(C.pink,.14);ctx.fill();
+  ctx.fillStyle=C.pink;ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowBlur=18;ctx.fillText(s,0,4);ctx.restore();
+}
+
+/* ================= S1: hook 0–13 ================= */
+const Q1='Кто написал роман «Сорок лун Пуговкина»?';
+const A1='Роман написал Аркадий Тучкин. Это тёплая история о маяке и одиночестве.';
+function s1(t){
+  const A=env(t,-1,13,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  driftNums(t,.7*(1-seg(t,4,6)));
+  // hook captions
+  cap('Нейросеть не умеет говорить «не знаю».',300,env(t,-1,4.4,.4),{size:66,weight:800});
+  cap('Её этому приходится учить.',470,env(t,1.9,4.4,.4)*eo(seg(t,1.9,2.5)),{size:52,weight:700,color:C.cyan,glow:16});
+  cap('Такой книги нет.\nМы её только что придумали.',330,env(t,4.6,8.7,.5),{size:56,weight:700});
+  cap('Но ответ звучит гладко\nи уверенно. Почему?',330,env(t,8.9,12.8,.5),{size:56,weight:700});
+  // chat
+  const qa=eo(seg(t,.3,.8));
+  const qy=lerp(900,860,qa);
+  const qh=bubble(Q1,1,qy,qa,{size:42,maxW:720});
+  const ay=qy+qh+40;
+  const typed=seg(t,1.2,4.2);
+  const ah=bubble(A1,-1,ay,seg(t,1,1.3),{size:44,maxW:760,typed});
+  if(t>1&&t<1.25){/* thinking dots */}
+  // stamp on answer
+  stamp('ВЫДУМКА',700,ay+ah+20,env(t,5,12.8,.4),seg(t,5,5.5));
+  ctx.restore();
+}
+
+/* ================= S2: confident case 13–24 ================= */
+const PAR=[['Париж',.92],['Лион',.05],['Марсель',.035],['Рим',.02],['Не знаю',.006]];
+function s2(t){
+  const A=env(t,13,24,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  cap('Нейросеть пишет слово за словом.\nКаждое — выбор из вероятностей.',300,env(t,13.2,18.5,.5),{size:52});
+  cap('Когда ответ известен,\nодин вариант уверенно лидирует.',300,env(t,18.7,23.8,.5),{size:52});
+  const fly=ease(seg(t,17.2,18.1));
+  text('Столица Франции —',540-(fly>0?110*fly:0)-0,640,{size:58,weight:700,alpha:seg(t,13.4,14)});
+  const grow=eo(seg(t,14.2,15.6)),winK=eo(seg(t,16,16.6));
+  const R=bars(t,900,PAR,seg(t,13.8,14.3)*(1-.6*seg(t,18.3,19)),{grow,win:0,winK,jit:1-grow,winCol:C.cyan,rowH:122});
+  text('вероятность следующего слова (условно)',540,1480,{size:32,color:C.dim,alpha:seg(t,14.4,15)});
+  // winner flies into the sentence
+  setFont(58,700);const sw=ctx.measureText('Столица Франции —').width;
+  const tx=540-110+sw/2+24;
+  if(t>17.2){const x=lerp(110,tx,fly),y=lerp(900,640,fly);
+    text('Париж.',x,y,{size:lerp(42,58,fly),weight:800,align:'left',color:C.cyan,glow:20});}
+  check(540,1640,48,C.green,seg(t,18.4,18.8),seg(t,18.5,19.1));
+  ctx.restore();
+}
+
+/* ================= S3: nobody knows 24–37 ================= */
+const ROM=[['Аркадий',.135],['Виктор',.125],['Мария',.115],['Олег',.105],['Не знаю',.02]];
+function s3(t){
+  const A=env(t,24,37,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  driftNums(t,.6*env(t,24.5,30,1),C.violet);
+  cap('А если ответа нет —\nвсе варианты слабые.',300,env(t,24.3,29.0,.5),{size:54,weight:700});
+  cap('Но один всё равно чуть выше.\nИ он побеждает.',300,env(t,29.2,33.2,.5),{size:54,weight:700});
+  cap('У выбора нет режима «сомневаюсь».\nЕсть только победитель.',300,env(t,33.4,36.8,.5),{size:48,weight:700});
+  const fly=ease(seg(t,31,31.9));
+  setFont(58,700);const head='Роман написал',hw=ctx.measureText(head).width;
+  const typedSur=seg(t,32.2,33.2);
+  const fullW=ctx.measureText('Роман написал Аркадий Тучкин.').width;
+  const sx=lerp(540-hw/2,540-fullW/2,ease(seg(t,30.8,31.6)));
+  text(head,sx,640,{size:58,weight:700,align:'left',alpha:seg(t,24.4,25)});
+  if(t<31)text('…',sx+hw+20,640,{size:58,weight:700,align:'left',alpha:seg(t,24.4,25)*(.5+.5*Math.sin(t*5))});
+  const grow=eo(seg(t,25,26.4)),winK=eo(seg(t,29.4,30.1));
+  // ghost: how a confident bar looks
+  const ga=env(t,26.6,29.2,.4);
+  if(ga>0){ctx.save();ctx.globalAlpha*=ga*.8;ctx.setLineDash([10,10]);ctx.strokeStyle=rgba(C.cyan,.7);ctx.lineWidth=2.5;rrect(430,900-22,530*.92,44,22);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+    text('уверенный ответ выглядел бы так',695,836,{size:32,color:C.cyan,alpha:ga*.9});}
+  const jit=t<29.4?1.4:0;
+  bars(t,900,ROM,seg(t,24.6,25.1)*(1-.6*seg(t,32.4,33)),{grow,win:0,winK,jit,winCol:C.cyan,seed:5,rowH:122});
+  text('все — низкие и почти равные',540,1480,{size:34,color:C.pink,alpha:env(t,26.8,32,.4)});
+  setFont(58,700);
+  const tx=sx+hw+20;
+  if(t>31){const x=lerp(110,tx,fly),y=lerp(900,640,fly);
+    text('Аркадий',x,y,{size:lerp(42,58,fly),weight:800,align:'left',color:C.cyan,glow:20});
+    setFont(58,800);const aw=ctx.measureText('Аркадий ').width;
+    const sur='Тучкин.';const n=Math.floor(sur.length*typedSur);
+    if(n>0)text(sur.slice(0,n),tx+aw,640,{size:58,weight:800,align:'left',color:C.cyan,glow:20});}
+  // same glow as Paris
+  text('светится так же, как «Париж»',540,1620,{size:38,weight:600,color:C.cyan,alpha:env(t,30.2,36.6,.4),glow:10});
+  ctx.restore();
+}
+
+/* ================= S4: same outside, different inside 37–46 ================= */
+function miniBars(cx,y,vals,col,a,k,t,seed){
+  if(a<=0)return;const n=vals.length,bw=56,gap=18,tot=n*bw+(n-1)*gap,H0=200;
+  ctx.save();ctx.globalAlpha*=a;
+  vals.forEach((v,i)=>{const h=Math.max(6,H0*v*k*(1+.04*Math.sin(t*3+i+seed))),x=cx-tot/2+i*(bw+gap);
+    rrect(x,y-h,bw,h,10);ctx.fillStyle=i===0?col:rgba(col,.55);if(i===0){ctx.shadowColor=col;ctx.shadowBlur=18;}ctx.fill();ctx.shadowBlur=0;});
+  ctx.fillStyle='rgba(255,255,255,.2)';ctx.fillRect(cx-tot/2-10,y,tot+20,2);ctx.restore();
+}
+function card(s,y,a,t){
+  if(a<=0)return;ctx.save();ctx.globalAlpha*=a;rrect(90,y-75,900,150,30);ctx.fillStyle=rgba(C.cyan,.1);ctx.fill();
+  ctx.strokeStyle=rgba(C.cyan,.7);ctx.lineWidth=2.5;ctx.shadowColor=C.cyan;ctx.shadowBlur=14+4*Math.sin(t*2);ctx.stroke();ctx.restore();
+  text(s,540,y,{size:52,weight:800,color:C.text,alpha:a,glow:0});
+}
+function s4(t){
+  const A=env(t,37,46,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  cap('Снаружи оба ответа\nвыглядят одинаково.',300,env(t,37.2,40.6,.5),{size:56,weight:700});
+  cap('Сомнение остаётся внутри.\nВ текст оно не попадает.',300,env(t,40.8,45.8,.5),{size:54,weight:700});
+  const ca=eo(seg(t,37.3,38));
+  const open=ease(seg(t,40.6,41.8));
+  const yA=lerp(800,620,open),yB=lerp(1060,1160,open);
+  card('Столица Франции — Париж.',yA,ca,t);
+  card('Роман написал Аркадий Тучкин.',yB,ca,t+1);
+  if(open>0){
+    miniBars(540,yA+300,[.92,.05,.035,.02,.01],C.green,open,eo(seg(t,41,42.2)),t,0);
+    text('знает',540,yA+340,{size:38,weight:700,color:C.green,alpha:open});
+    miniBars(540,yB+300,[.135,.125,.115,.105,.02],C.pink,open,eo(seg(t,41.3,42.5)),t,2);
+    text('гадает',540,yB+340,{size:38,weight:700,color:C.pink,alpha:open});
+  }
+  ctx.restore();
+}
+
+/* ================= S5: "не знаю" is a token 46–56 ================= */
+function s5(t){
+  const A=env(t,46,56,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  cap('«Не знаю» — для неё\nпросто ещё один вариант.',300,env(t,46.3,50.8,.5),{size:54,weight:700});
+  cap('Его нужно выучить и поощрять.\nИначе он проигрывает.',300,env(t,51,55.8,.5),{size:54,weight:700});
+  text('Роман написал …',540,640,{size:54,weight:700,alpha:seg(t,46.3,46.8)*(1-seg(t,53.8,54.3))});
+  const tr=ease(seg(t,51.2,53.6));
+  const items=ROM.map(([l,p],i)=>[l,i===4?lerp(.02,.62,tr):lerp(p,p*.6,tr)]);
+  const winK=eo(seg(t,53.6,54.2));
+  bars(t,860,items,seg(t,46.4,46.9),{grow:1,win:winK>0?4:-1,winK,hl:winK>0?-1:4,hlCol:C.pink,winCol:C.green,seed:9,jit:t<51?.8:0,rowH:120});
+  // highlight frame on "не знаю"
+  const ha=env(t,47,51.2,.4);
+  if(ha>0){ctx.save();ctx.globalAlpha*=ha;ctx.strokeStyle=rgba(C.pink,.9);ctx.lineWidth=3;ctx.setLineDash([12,8]);rrect(80,860+4*120-50,920,100,24);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+    text('маленький шанс — почти никогда не выигрывает',540,860+4*120+90,{size:34,color:C.pink,alpha:ha});}
+  // training arrows rising
+  const ta=env(t,51.2,54,.3);
+  if(ta>0){for(let i=0;i<9;i++){const ph=(t*1.1+i/9)%1,x=200+i*80+Math.sin(i*2.1)*20,y=1660-ph*240;
+      ctx.save();ctx.globalAlpha*=ta*Math.sin(ph*Math.PI);ctx.strokeStyle=C.green;ctx.lineWidth=5;ctx.lineCap='round';ctx.shadowColor=C.green;ctx.shadowBlur=12;
+      ctx.beginPath();ctx.moveTo(x,y+30);ctx.lineTo(x,y-20);ctx.moveTo(x-14,y-6);ctx.lineTo(x,y-20);ctx.lineTo(x+14,y-6);ctx.stroke();ctx.restore();}
+    text('обучение: честное «не знаю» поощряется',540,1720,{size:36,weight:600,color:C.green,alpha:ta});}
+  // result
+  const ra=seg(t,54.2,54.7);
+  text('Я не знаю такой книги.',540,640,{size:56,weight:800,color:C.green,alpha:ra,glow:16});
+  check(540,1560,48,C.green,ra,seg(t,54.4,55));
+  ctx.restore();
+}
+
+/* ================= S6: how to protect 56–66 ================= */
+function icon(kind,x,y,col,t){
+  ctx.save();ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor=col;ctx.shadowBlur=14;
+  if(kind==='book'){ctx.beginPath();ctx.moveTo(x,y-26);ctx.quadraticCurveTo(x-20,y-34,x-38,y-26);ctx.lineTo(x-38,y+28);ctx.quadraticCurveTo(x-20,y+20,x,y+28);
+    ctx.quadraticCurveTo(x+20,y+20,x+38,y+28);ctx.lineTo(x+38,y-26);ctx.quadraticCurveTo(x+20,y-34,x,y-26);ctx.lineTo(x,y+28);ctx.stroke();}
+  if(kind==='again'){const r=30,a0=t*1.5;ctx.beginPath();ctx.arc(x,y,r,a0,a0+2.4);ctx.stroke();ctx.beginPath();ctx.arc(x,y,r,a0+Math.PI,a0+Math.PI+2.4);ctx.stroke();
+    for(const off of [2.4,Math.PI+2.4]){const a=a0+off,px=x+Math.cos(a)*r,py=y+Math.sin(a)*r,tx=-Math.sin(a),ty=Math.cos(a);
+      ctx.beginPath();ctx.moveTo(px+tx*12-Math.cos(a)*10,py+ty*12-Math.sin(a)*10);ctx.lineTo(px+tx*2,py+ty*2);ctx.lineTo(px+tx*12+Math.cos(a)*10,py+ty*12+Math.sin(a)*10);ctx.stroke();}}
+  if(kind==='q'){ctx.restore();text('?',x,y+2,{size:70,weight:800,color:col,glow:16});return;}
+  ctx.restore();
+}
+const TIPS=[['book','Попросите источник','и проверьте, что он существует',C.cyan,56.6],
+  ['again','Переспросите','разные ответы — знак, что она гадает',C.violet,58.8],
+  ['q','Разрешите сомневаться','«Если не уверена — так и скажи»',C.green,61.0]];
+function s6(t){
+  const A=env(t,56,66,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  cap('Как защититься',360,seg(t,56.2,56.8),{size:68,weight:800,color:C.text});
+  TIPS.forEach(([k,ti,sub,col,st],i)=>{
+    const a=eo(seg(t,st,st+.6)),y=720+i*310,dx=(1-a)*80;
+    if(a<=0)return;ctx.save();ctx.globalAlpha*=a;rrect(80+dx,y-115,920,230,32);ctx.fillStyle=rgba(col,.09);ctx.fill();
+    ctx.strokeStyle=rgba(col,.65);ctx.lineWidth=2.5;ctx.shadowColor=col;ctx.shadowBlur=12;ctx.stroke();ctx.restore();
+    ctx.save();ctx.globalAlpha*=a;glowDot(195+dx,y,90,col,.25);ctx.beginPath();ctx.arc(195+dx,y,62,0,7);ctx.strokeStyle=rgba(col,.8);ctx.lineWidth=3;ctx.stroke();icon(k,195+dx,y,col,t);ctx.restore();
+    text(ti,300+dx,y-36,{size:50,weight:800,align:'left',alpha:a,color:mix(C.text,col,.25)});
+    text(sub,300+dx,y+42,{size:38,weight:500,align:'left',alpha:a,color:'#c9d0f5',maxW:650,lh:1.2});
+  });
+  ctx.restore();
+}
+
+/* ================= S7: takeaway 66–69.8 ================= */
+function s7(t){
+  const A=env(t,66,70.2,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  // faint trembling flat bars behind
+  for(let i=0;i<9;i++){const h=120+40*Math.sin(t*3+i*1.7),x=140+i*100;ctx.fillStyle=rgba(i%2?C.violet:C.cyan,.12);rrect(x,1400-h,60,h,10);ctx.fill();}
+  const k=eo(seg(t,66.2,67.2));
+  text('Уверенный тон —',540,820,{size:84,weight:800,alpha:k});
+  ctx.save();ctx.translate(540,950);const sc=.9+.1*eo(seg(t,66.8,67.8));ctx.scale(sc,sc);
+  setFont(96,800);const gw=ctx.measureText('ещё не правда.').width;const gr=ctx.createLinearGradient(-gw/2,0,gw/2,0);gr.addColorStop(0,C.cyan);gr.addColorStop(1,C.violet);
+  ctx.globalAlpha*=seg(t,66.8,67.6);ctx.fillStyle=gr;ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor=C.violet;ctx.shadowBlur=36+8*Math.sin(t*2);ctx.fillText('ещё не правда.',0,0);ctx.restore();
+  ctx.restore();
+}
+
+/* ================= S8: what I think 69.6–80 ================= */
+const WB=[['я уверен',.3],['наверное',.26],['кажется',.24],['точно',.22],['я не уверен',.08]];
+function s8(t){
+  const A=env(t,69.6,81,.8);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  glowDot(540,1000,520,'#ffd9a0',.12+.04*Math.sin(t*1.5));
+  text('А теперь — что думаю об этом я',540,260,{size:44,weight:600,color:C.amber,alpha:env(t,69.9,81,.6),glow:14});
+  const lit=ease(seg(t,74.6,76.2));
+  const items=WB.map(([l,p],i)=>[l,(i===4?lerp(p,.5,lit):p*(1-.25*lit))*(1+.06*Math.sin(t*1.4+i*1.3))]);
+  bars(t,700,items,seg(t,70,70.8)*(1-.15*lit),{grow:eo(seg(t,70.2,71.6)),win:lit>0?4:-1,winK:lit,winCol:'#ffe2b8',loseDim:.45,
+    colFn:r=>r%2?'#c98a4a':'#a8743f',labelX:110,bx:470,bw:490,labelSize:42,seed:3,rowH:118});
+  const L=[[70.4,74.4,'У меня тоже всегда есть\n«самое вероятное» слово —\nдаже когда я не знаю.'],
+    [74.6,81,'Поэтому моё «я не уверен» —\nне слабость. Это честность,\nкоторой меня научили.']];
+  for(const[a,b,s]of L)cap(s,1460,env(t,a,b,.5),{size:50,weight:600,color:'#fff3e2',maxW:920});
+  text('— Claude',540,1680,{size:44,weight:700,color:C.amber,alpha:seg(t,76.4,77.2),glow:16});
+  ctx.restore();
+}
+
+function render(t){
+  bg(t);s1(t);s2(t);s3(t);s4(t);s5(t);s6(t);s7(t);s8(t);
+  const fade=Math.max(1-seg(t,0,.2),seg(t,79.4,80));
+  if(fade>0){ctx.globalAlpha=fade;ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
+  watermark();
+}
+boot(render,T_END);
+</script>
+</body>
+</html>
