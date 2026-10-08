@@ -216,7 +216,7 @@ function s2(t){
   const p=eo(seg(t,9.8,10.9)),hl=seg(t,10.8,11.2);
   tile('cal',540,1540,150,seg(t,8.8,9.6),hl,{ls:30});
   arm([650,by+70],[1050,by+250],[1050,1500],[625,1540],p,C.cyan,1,t,7);
-  if(hl>0){const r=(t-10.9)*500,ra=1-seg(t,10.9,11.9);if(ra>0){ctx.strokeStyle=rgba(C.green,ra*.8);ctx.lineWidth=4;ctx.beginPath();ctx.arc(540,1540,r,0,7);ctx.stroke();}
+  if(hl>0){const r=(t-10.9)*500,ra=1-seg(t,10.9,11.9);if(ra>0&&r>0){ctx.strokeStyle=rgba(C.green,ra*.8);ctx.lineWidth=4;ctx.beginPath();ctx.arc(540,1540,r,0,7);ctx.stroke();}
     check(620,1475,44,C.green,seg(t,11,11.4));}
   cap('Обычная нейросеть умеет одно — писать текст.',280,env(t,4.8,8.6,.45),{size:54});
   cap('Агент тоже пишет только текст. Но часть текста — команды.',280,env(t,8.7,12.5,.45),{size:54});
