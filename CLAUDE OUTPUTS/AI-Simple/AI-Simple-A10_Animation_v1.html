@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Король минус мужчина</title>
+<style>
+  html,body{margin:0;height:100%;background:#03040a;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{display:block;height:100vh;max-width:100vw;aspect-ratio:9/16}
+  body.render canvas{height:auto;width:1080px}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+/* ===== AI-Reels common kit (paste verbatim into each video's <script>) ===== */
+const W=1080,H=1920;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const SANS='Inter, "DejaVu Sans", sans-serif', MONO='"DejaVu Sans Mono", monospace', SERIF='"DejaVu Serif", Georgia, serif';
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const eo=t=>1-Math.pow(1-t,3);
+const seg=(t,a,b)=>clamp((t-a)/(b-a));
+const env=(t,a,b,f=.5)=>clamp((t-a)/f)*clamp((b-t)/f);
+const hash=n=>{const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);};
+function rng(seed){let s=seed>>>0||1;return()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296;};}
+function hex(h){const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255];}
+function mixHex(a,b,t){const A=hex(a),B=hex(b);return'#'+A.map((v,i)=>Math.round(lerp(v,B[i],t)).toString(16).padStart(2,'0')).join('');}
+function rgba(h,a){const[r,g,b]=hex(h);return`rgba(${r},${g},${b},${a})`;}
+function setFont(size,weight=500,family=SANS){ctx.font=`${weight} ${size}px ${family}`;}
+function wrap(s,maxW){const out=[];for(const para of String(s).split('\n')){const words=para.split(' ');let line='';
+  for(const w of words){const test=line?line+' '+w:w;if(ctx.measureText(test).width>maxW&&line){out.push(line);line=w;}else line=test;}
+  out.push(line);}return out;}
+/* text(s,x,y,{size,weight,color,alpha,align,family,maxW,lh,glow,shadow}) – multi-line centered vertically on y */
+function text(s,x,y,o={}){
+  const{size=48,weight=500,color='#fff',alpha=1,align='center',family=SANS,maxW=0,lh=1.25,glow=0,shadow='rgba(0,0,0,.8)'}=o;
+  if(alpha<=.002)return;
+  ctx.save();ctx.globalAlpha*=alpha;ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='middle';
+  setFont(size,weight,family);ctx.shadowColor=glow?color:shadow;ctx.shadowBlur=glow||(shadow?16:0);
+  const lines=maxW?wrap(s,maxW):String(s).split('\n');const off=(lines.length-1)*size*lh/2;
+  lines.forEach((l,i)=>ctx.fillText(l,x,y-off+i*size*lh));ctx.restore();
+}
+function rrect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+function glowDot(x,y,r,color,a){if(a<=0)return;const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,rgba(color,a));g.addColorStop(1,rgba(color,0));ctx.fillStyle=g;ctx.fillRect(x-r,y-r,2*r,2*r);}
+/* film grain / noise overlay, deterministic per frame */
+const _grain=(()=>{const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');const d=g.createImageData(256,256);const r=rng(99);
+  for(let i=0;i<d.data.length;i+=4){const v=r()*255;d.data[i]=d.data[i+1]=d.data[i+2]=v;d.data[i+3]=255;}g.putImageData(d,0,0);return c;})();
+function grain(t,alpha=.08,mode='overlay'){ctx.save();ctx.globalAlpha=alpha;ctx.globalCompositeOperation=mode;
+  const ox=Math.floor(hash(Math.floor(t*24))*256),oy=Math.floor(hash(Math.floor(t*24)+7)*256);
+  ctx.translate(-ox,-oy);ctx.fillStyle=ctx.createPattern(_grain,'repeat');ctx.fillRect(0,0,W+256,H+256);ctx.restore();}
+/* Channel watermark – call LAST in render(t), every frame. dark=true for light backgrounds */
+function watermark(dark=false){
+  const label='t.me/eventstory_by';ctx.save();ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;
+  setFont(34,700);const tw=ctx.measureText(label).width,iw=46,pw=tw+iw+56,ph=68,x=540-pw/2,y=1812;
+  rrect(x,y,pw,ph,34);ctx.fillStyle=dark?'rgba(255,255,255,.7)':'rgba(8,10,24,.55)';ctx.fill();
+  ctx.strokeStyle=dark?'rgba(0,0,0,.25)':'rgba(255,255,255,.28)';ctx.lineWidth=2;ctx.stroke();
+  const cx=x+28+iw/2,cy=y+ph/2;ctx.fillStyle='#2aabee';ctx.beginPath();ctx.arc(cx,cy,iw/2,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(cx-13,cy+1);ctx.lineTo(cx+12,cy-10);ctx.lineTo(cx+7,cy+12);ctx.lineTo(cx-1,cy+5);ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark?'rgba(10,10,20,.9)':'rgba(255,255,255,.92)';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,x+28+iw+14,cy+1);ctx.restore();
+}
+/* boot(render, T_END): exposes window.render/T_END/ready; plays in real time unless ?render */
+function boot(render,T_END){
+  window.render=t=>{ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;render(t);};
+  window.T_END=T_END;const isRender=location.search.includes('render');if(isRender)document.body.classList.add('render');
+  const fonts=['400 40px Inter','500 40px Inter','600 40px Inter','700 40px Inter','800 40px Inter','400 40px "DejaVu Sans Mono"','700 40px "DejaVu Sans Mono"','400 40px "DejaVu Serif"','700 40px "DejaVu Serif"'];
+  window.ready=Promise.all(fonts.map(f=>document.fonts.load(f))).then(()=>{window.render(0);return true;});
+  if(!isRender){let t0=null;cv.addEventListener('click',()=>t0=null);
+    window.ready.then(()=>{const loop=ts=>{if(t0===null)t0=ts;window.render(((ts-t0)/1000)%T_END);requestAnimationFrame(loop);};requestAnimationFrame(loop);});}
+}
+/* ===== end kit ===== */
+
+const T_END=82;
+const C={cyan:'#5ee7ff',violet:'#a78bfa',pink:'#ff5c8a',green:'#6dffb0',amber:'#ffb86b',text:'#eef1ff',dim:'#8f97c7'};
+function mix(a,b,t){const A=hex(a),B=hex(b);return`rgb(${A.map((v,i)=>Math.round(lerp(v,B[i],t))).join(',')})`;}
+const fmtNum=v=>(v>=0?'+':'−')+Math.abs(v).toFixed(2);
+const cap=(s,y,a,o={})=>text(s,540,y,{size:50,weight:600,maxW:940,alpha:a,shadow:'rgba(0,0,0,.85)',...o});
+const WARM=t=>ease(seg(t,67.5,70.5));
+
+/* ---------- background ---------- */
+const PS=[];{const r=rng(7);for(let i=0;i<260;i++)PS.push({x:r()*W,y:r()*H,z:.3+r()*.7,ph:r()*6.28});}
+function bg(t){
+  const warm=WARM(t);
+  const g=ctx.createRadialGradient(W/2,H*.5,40,W/2,H*.5,H*.85);
+  g.addColorStop(0,mix('#0d1236','#2b1709',warm));g.addColorStop(1,mix('#03040a','#060302',warm));
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const pc=mixHex('#9fb4ff',C.amber,warm);
+  for(const p of PS){const y=((p.y-t*14*p.z)%H+H)%H,x=p.x+Math.sin(t*.3+p.ph)*12;
+    ctx.fillStyle=rgba(pc,.12+.3*p.z*(.6+.4*Math.sin(t*1.3+p.ph)));ctx.fillRect(x,y,1.2+2*p.z,1.2+2*p.z);}
+}
+
+/* ---------- meaning space ---------- */
+const add=(a,b)=>a.map((v,i)=>v+b[i]),sub=(a,b)=>a.map((v,i)=>v-b[i]),lp3=(a,b,m)=>a.map((v,i)=>lerp(v,b[i],m));
+const GEN=[.55,-.1,.15],CAP=[.1,-.5,.1],TEN=[.1,-.4,.05];
+const WD={};
+function w(n,p,g){WD[n]={n,p,g};}
+w('мужчина',[-.2,-.7,-.2],'ppl');w('женщина',add([-.2,-.7,-.2],GEN),'ppl');
+w('король',[-.1,.25,-.3],'ppl');w('королева',add(add([-.1,.25,-.3],GEN),[.05,-.06,.04]),'ppl');
+w('брат',[-.62,-.32,.35],'ppl');w('сестра',add([-.62,-.32,.35],GEN),'ppl');
+w('Франция',[-.95,.75,0],'city');w('Париж',add([-.95,.75,0],CAP),'city');
+w('Италия',[-.5,1.05,.1],'city');w('Рим',add(add([-.5,1.05,.1],CAP),[.05,.05,-.04]),'city');
+w('Германия',[-1.05,-.15,-.15],'city');w('Берлин',add([-1.05,-.15,-.15],CAP),'city');
+w('читать',[.75,.7,.1],'verb');w('читал',add([.75,.7,.1],TEN),'verb');
+w('писать',[1.05,.35,-.35],'verb');w('писал',add([1.05,.35,-.35],TEN),'verb');
+w('идти',[.35,1.05,-.2],'verb');w('шёл',add([.35,1.05,-.2],TEN),'verb');
+const WL=Object.values(WD);WL.forEach((e,i)=>e.i=i);
+const GC={ppl:C.cyan,city:C.violet,verb:C.green};
+const REL={ppl:[['мужчина','женщина'],['брат','сестра'],['король','королева']],
+  city:[['Франция','Париж'],['Италия','Рим'],['Германия','Берлин']],
+  verb:[['читать','читал'],['писать','писал'],['идти','шёл']]};
+const DUST=[];{const r=rng(11);while(DUST.length<380){const p=[r()*2-1,r()*2-1,r()*2-1];if(p[0]**2+p[1]**2+p[2]**2<1)DUST.push({p:p.map(v=>v*1.25),s:r()});}}
+
+function proj(p,ang,tilt,cx,cy,sc){
+  const[x,y,z]=p,c=Math.cos(ang),s=Math.sin(ang),x1=x*c+z*s,z1=-x*s+z*c;
+  const ct=Math.cos(tilt),st=Math.sin(tilt),y2=y*ct-z1*st,z2=y*st+z1*ct,f=3.2/(3.2+z2);
+  return{x:cx+x1*sc*f,y:cy-y2*sc*f,f,z:z2};}
+const KEYS=[{t:-9,f:[.04,.1,0],sc:385,cy:990},{t:15,f:[0,-.25,-.05],sc:500,cy:990},{t:27,f:[.12,.08,-.2],sc:500,cy:1000},
+  {t:41.8,f:[-.5,.35,.3],sc:520,cy:1000},{t:54,f:[.04,.1,0],sc:385,cy:990},{t:64,f:[.04,.1,0],sc:375,cy:1000}];
+function cam(t){
+  let s={f:KEYS[0].f,sc:KEYS[0].sc,cy:KEYS[0].cy};
+  for(let i=1;i<KEYS.length;i++){const k=KEYS[i],m=ease(seg(t,k.t,k.t+2));if(m<=0)break;
+    s={f:lp3(s.f,k.f,m),sc:lerp(s.sc,k.sc,m),cy:lerp(s.cy,k.cy,m)};}
+  s.ang=-.22+.3*Math.sin(t*.085)+.05*Math.sin(t*.31);s.tilt=.3+.07*Math.sin(t*.13);return s;}
+let CAM=null;
+const P3=p=>proj(sub(p,CAM.f),CAM.ang,CAM.tilt,540,CAM.cy,CAM.sc);
+
+function arrow3(p0,p1,col,prog,a,lw=5,head=true){
+  if(prog<=0||a<=0)return null;
+  const A=P3(p0),B=P3(lp3(p0,p1,prog));
+  ctx.save();ctx.globalAlpha*=a;ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=lw*B.f;ctx.lineCap='round';
+  ctx.shadowColor=col;ctx.shadowBlur=18;
+  const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,hs=Math.min(26*B.f,L*.45);
+  ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x-ux*hs*(head?.7:0),B.y-uy*hs*(head?.7:0));ctx.stroke();
+  if(head){ctx.beginPath();ctx.moveTo(B.x,B.y);ctx.lineTo(B.x-ux*hs-uy*hs*.55,B.y-uy*hs+ux*hs*.55);ctx.lineTo(B.x-ux*hs+uy*hs*.55,B.y-uy*hs-ux*hs*.55);ctx.closePath();ctx.fill();}
+  ctx.restore();return{A,B};
+}
+
+/* word visibility */
+const HOOKW=['король','мужчина','женщина','королева'];
+function wordAlpha(e,t){
+  let a;
+  if(HOOKW.includes(e.n))a=seg(t,4.6,6.0);
+  else a=seg(t,5.6+e.i*.14,6.3+e.i*.14);
+  const d=env(t,15.5,42,1.2)*(e.g!=='ppl')+env(t,42,54,1.2)*(e.g!=='city');
+  return a*(1-.8*Math.min(1,d))*(1-.45*env(t,64,90,1.5)*(1-WARM(t)));
+}
+
+/* ---------- hook equation layout ---------- */
+function hookLayout(){
+  const L=[];setFont(80,800);
+  const l1=['король',' − ','мужчина'],l2=['+ ','женщина',' ='];
+  [[l1,820],[l2,945]].forEach(([toks,y])=>{const ws=toks.map(s=>ctx.measureText(s).width),tw=ws.reduce((a,b)=>a+b,0);let x=540-tw/2;
+    toks.forEach((s,i)=>{L.push({s:s.trim(),x:x+ws[i]/2,y,size:80});x+=ws[i];});});
+  L.push({s:'королева',x:540,y:1110,size:124});return L;
+}
+const NUMS=[];{const r=rng(3);for(let i=0;i<40;i++)NUMS.push({a:r()*6.28,d:260+r()*420,v:(r()*2-1),s:.4+r()*.8,ph:r()*6});}
+function sHook(t){
+  const A=env(t,-1,5,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  for(const n of NUMS){const d=n.d+t*24*n.s,ang=n.a+t*.04*n.s;
+    text(fmtNum(n.v+Math.sin(t*n.s+n.ph)*.05),540+Math.cos(ang)*d,960+Math.sin(ang)*d*1.3,{size:24+10*n.s,family:MONO,color:C.cyan,alpha:(.15+.25*Math.sin(t*.8+n.ph)**2)*(1-seg(t,3.8,4.8)),shadow:''});}
+  glowDot(540,960,520,C.violet,.16);
+  text('С понятиями можно делать арифметику.',540,470,{size:64,weight:800,maxW:900,alpha:1-seg(t,4.1,4.7)});
+  const L=hookLayout(),fly=seg(t,4.2,6.0);
+  L.forEach(o=>{
+    if(HOOKW.includes(o.s)&&o.s!=='королева'){if(fly>0)return;
+      const col=o.s==='король'?C.cyan:o.s==='мужчина'?'#ffd0dc':'#d4ffe8';
+      text(o.s,o.x,o.y,{size:o.size,weight:800,color:col,glow:14});return;}
+    if(o.s==='королева'){
+      const rv=eo(seg(t,2.0,2.7));
+      if(rv<1){const pq=1+.08*Math.sin(t*6);text('?',o.x,o.y,{size:150*pq,weight:800,color:'#fff',alpha:1-rv,glow:30});}
+      if(rv>0&&fly<=0){ctx.save();ctx.translate(o.x,o.y);const k=.8+.2*rv;ctx.scale(k,k);setFont(o.size,800);
+        const gw=ctx.measureText(o.s).width,gr=ctx.createLinearGradient(-gw/2,0,gw/2,0);gr.addColorStop(0,C.cyan);gr.addColorStop(1,C.violet);
+        ctx.globalAlpha*=rv;ctx.fillStyle=gr;ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor=C.violet;ctx.shadowBlur=40+10*Math.sin(t*2);
+        ctx.fillText(o.s,0,0);ctx.restore();
+        if(t>2&&t<3.2){const rr=(t-2)*900;ctx.strokeStyle=rgba(C.violet,.8*(1-seg(t,2,3.2)));ctx.lineWidth=4;ctx.beginPath();ctx.arc(o.x,o.y,rr,0,7);ctx.stroke();}}
+      return;}
+    const col=o.s==='−'?C.pink:o.s==='+'?C.green:'#fff';
+    text(o.s,o.x,o.y,{size:o.size,weight:800,color:col,alpha:1-seg(t,3.9,4.5),glow:10});
+  });
+  ctx.restore();
+}
+/* flying hook words (drawn over space during 4.2–6.0) */
+function hookFly(t){
+  const fly=seg(t,4.2,6.0);if(fly<=0||fly>=1)return;const m=ease(fly);
+  for(const o of hookLayout()){if(!HOOKW.includes(o.s))continue;const e=WD[o.s],q=P3(e.p);
+    const x=lerp(o.x,q.x,m),y=lerp(o.y,q.y-34*q.f,m),size=lerp(o.size,34*q.f,m);
+    const col=o.s==='королева'?C.violet:o.s==='король'?C.cyan:o.s==='мужчина'?'#ffd0dc':'#d4ffe8';
+    text(o.s,x,y,{size,weight:lerp(800,600,m)>700?800:600,color:mix(col,mix(C.text,C.cyan,.3),m),glow:14*(1-m)});}
+}
+
+/* ---------- space scene ---------- */
+const S2arrowA=t=>1-seg(t,14.3,15.8);
+function space(t){
+  const A=env(t,4.2,90,.8)*(1-.88*env(t,77.8,90,.8));if(!A)return;CAM=cam(t);ctx.save();ctx.globalAlpha=A;
+  const warm=WARM(t),dustC=mixHex('#9fb4ff',C.amber,warm);
+  const da=seg(t,4.2,6);
+  for(const d of DUST){const q=P3(d.p);ctx.fillStyle=rgba(dustC,da*(.1+.22*d.s)*q.f);ctx.fillRect(q.x,q.y,2.4*q.f,2.4*q.f);}
+  ctx.lineWidth=1.5;
+  const axA=da*(1-.6*warm);
+  for(const ax of [[1.3,0,0],[0,1.3,0],[0,0,1.3]]){const a=P3(ax.map(v=>-v)),b=P3(ax);
+    ctx.strokeStyle=rgba(dustC,.22*axA);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
+  const O=P3([0,0,0]);glowDot(O.x,O.y,40,dustC,.35*da);
+
+  /* S2: arrows from origin to every word */
+  const s2a=S2arrowA(t);
+  if(s2a>0)WL.forEach(e=>{const pr=eo(seg(t,6.4+e.i*.12,7.4+e.i*.12));arrow3([0,0,0],e.p,GC[e.g],pr,.55*s2a*wordAlpha(e,t),3.2);});
+
+  /* S3: relation arrows (people) */
+  REL.ppl.forEach(([a,b],k)=>{const st=17+k*1.8,pr=eo(seg(t,st,st+1.2)),al=env(t,st,27.4,.6)*(k===2?1:.85);
+    arrow3(WD[a].p,WD[b].p,k===2?'#ffffff':C.violet,pr,al,k===2?6:4.5);});
+
+  /* S5 extra: country -> capital parallels */
+  REL.city.forEach(([a,b],k)=>{const st=49.6+k*.7,pr=eo(seg(t,st,st+1)),al=env(t,st,54.3,.5);arrow3(WD[a].p,WD[b].p,'#ffffff',pr,al*.85,4.5);});
+
+  /* S6: all relation families */
+  const fam={ppl:C.violet,city:C.cyan,verb:C.green};
+  Object.keys(REL).forEach((g,gi)=>REL[g].forEach(([a,b],k)=>{const st=54.6+gi*1.1+k*.25,pr=eo(seg(t,st,st+.9)),al=env(t,st,64.8,.6);
+    arrow3(WD[a].p,WD[b].p,fam[g],pr,al,4.5);}));
+
+  /* arithmetic */
+  arith(t,'король','мужчина','женщина','королева',28.3,'#5ee7ff');
+  arith(t,'Париж','Франция','Италия','Рим',43.2,'#a78bfa');
+
+  /* warm threads in the ending */
+  if(warm>0){
+    ctx.lineCap='round';
+    for(let i=0;i<WL.length;i++)for(let j=i+1;j<WL.length;j++){
+      const a=WL[i],b=WL[j],d=Math.hypot(...sub(a.p,b.p));if(d>.75)continue;
+      const qa=P3(a.p),qb=P3(b.p),ph=hash(i*31+j),mx=(qa.x+qb.x)/2,my=(qa.y+qb.y)/2,dx=qb.x-qa.x,dy=qb.y-qa.y;
+      const sl=.12*Math.sin(t*.7+ph*6),qx=mx-dy*sl,qy=my+dx*sl,ap=seg(t,68.5+ph*2.5,69.5+ph*2.5);
+      ctx.strokeStyle=rgba('#ffd9a0',warm*ap*(.18+.25*(1-d)));ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(qa.x,qa.y);ctx.quadraticCurveTo(qx,qy,qb.x,qb.y);ctx.stroke();
+      if(ph<.35){const s=(t*.35+ph*3)%1,u=1-s;glowDot(u*u*qa.x+2*u*s*qx+s*s*qb.x,u*u*qa.y+2*u*s*qy+s*s*qb.y,13,'#fff4e0',warm*ap*.8);}
+    }
+  }
+
+  /* word dots + labels (depth sorted) */
+  const Q=WL.map(e=>P3(e.p)),order=WL.map((e,i)=>i).sort((a,b)=>Q[b].z-Q[a].z);
+  for(const i of order){const e=WL[i],q=Q[i];let a=wordAlpha(e,t);if(a<=0)continue;
+    const col=mixHex(GC[e.g],C.amber,warm),pulse=1+.08*Math.sin(t*2+i);
+    glowDot(q.x,q.y,30*q.f*pulse,col,.55*a);
+    ctx.fillStyle=col;ctx.globalAlpha=A*a;ctx.beginPath();ctx.arc(q.x,q.y,7.5*q.f,0,7);ctx.fill();ctx.globalAlpha=A;
+    const flying=HOOKW.includes(e.n)&&t<6.0;
+    if(!flying)text(e.n,q.x,q.y-36*q.f,{size:Math.max(28,34*q.f),weight:600,color:mixHex(mixHex(C.text,GC[e.g],.3),'#fff1dc',warm),alpha:a*(.6+.4*q.f)});
+  }
+  /* coordinates of "король" */
+  const ca=env(t,9.2,14.6,.5);
+  if(ca>0){const q=P3(WD['король'].p),p=WD['король'].p,set=t>10.6;
+    const s='( '+p.map((v,k)=>fmtNum(set?v:hash(k*7+Math.floor(t*14))*2-1)).join('  ')+' )';
+    setFont(30,400,MONO);const sw=ctx.measureText(s).width;ctx.save();ctx.globalAlpha*=ca;rrect(q.x-sw/2-16,q.y-82*q.f-26,sw+32,52,26);ctx.fillStyle='rgba(8,10,30,.75)';ctx.fill();ctx.restore();
+    text(s,q.x,q.y-82*q.f,{size:30,family:MONO,color:set?C.text:C.cyan,alpha:ca*.95,glow:set?0:10});}
+  hookFly(t);
+  ctx.restore();
+}
+
+/* tip-to-tail arithmetic: A − B + Cw ≈ D */
+function arith(t,An,Bn,Cn,Dn,t0,col){
+  const end=An==='король'?41.8:54,al=env(t,t0-.3,end,.6);if(al<=0)return;
+  const pA=WD[An].p,pB=WD[Bn].p,pC=WD[Cn].p,m1=sub(pA,pB),r=add(m1,pC);
+  const sp=An==='король'?1:.72;const T1=t0,T2=t0+2.7*sp,T3=t0+5.7*sp,T4=t0+8.2*sp;
+  /* ghost vectors from origin for what we subtract/add */
+  arrow3([0,0,0],pB,C.pink,eo(seg(t,T2-.4,T2+.5)),.35*env(t,T2-.4,T3+.4,.4),3);
+  arrow3([0,0,0],pC,C.green,eo(seg(t,T3-.4,T3+.5)),.35*env(t,T3-.4,T4+.4,.4),3);
+  const a1=arrow3([0,0,0],pA,col,eo(seg(t,T1,T1+1.2)),al,6.5);
+  const a2=arrow3(pA,m1,C.pink,eo(seg(t,T2,T2+1.3)),al,6.5);
+  const a3=arrow3(m1,r,C.green,eo(seg(t,T3,T3+1.3)),al,6.5);
+  const lab=(p0,p1,str,c,ta,fr,sd=1)=>{const A=P3(p0),B=P3(p1),dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1,nx=-dy/L*sd,ny=dx/L*sd;
+    const x=lerp(A.x,B.x,fr)+nx*44,y=lerp(A.y,B.y,fr)+ny*44;text(str,x,y,{size:36,weight:800,color:c,alpha:al*seg(t,ta,ta+.5),align:nx>.25?'left':nx<-.25?'right':'center'});};
+  if(a2&&t>T2+.6)lab(pA,m1,'− '+Bn,C.pink,T2+.6,An==='король'?.6:.35,-1);
+  if(a3&&t>T3+.6)lab(m1,r,'+ '+Cn,C.green,T3+.6,.68,An==='король'?-1:1);
+  if(t>T4-.4){const q=P3(r),a=seg(t,T4-.4,T4),k=seg(t,T4,T4+1);
+    glowDot(q.x,q.y,80,'#ffffff',.6*a*al);ctx.save();ctx.globalAlpha*=a*al;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(q.x,q.y,10,0,7);ctx.fill();ctx.restore();
+    if(t<T4+.9){const rr=(t-T4+.4)*500;ctx.strokeStyle=rgba('#ffffff',.7*(1-seg(t,T4-.4,T4+.9))*al);ctx.lineWidth=3;ctx.beginPath();ctx.arc(q.x,q.y,rr,0,7);ctx.stroke();}
+    const qd=P3(WD[Dn].p),rad=Math.hypot(qd.x-q.x,qd.y-q.y)+34;
+    ctx.save();ctx.globalAlpha*=al*k;ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=2.5;ctx.setLineDash([9,9]);ctx.lineDashOffset=-t*20;
+    ctx.beginPath();ctx.arc(q.x,q.y,rad,0,7);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+    const h=seg(t,T4+1,T4+1.6);if(h>0){ctx.save();ctx.globalAlpha*=al*h;ctx.strokeStyle=col;ctx.lineWidth=4;ctx.shadowColor=col;ctx.shadowBlur=20;
+      ctx.beginPath();ctx.arc(qd.x,qd.y,(30+6*Math.sin(t*5))*qd.f,0,7);ctx.stroke();ctx.restore();}
+  }
+}
+/* equation bar */
+function eqBar(t,toks,y,a){
+  if(a<=0)return;setFont(60,800);const gap=18;let ws=toks.map(o=>ctx.measureText(o.s).width);
+  let tw=ws.reduce((x,v)=>x+v,0)+gap*(toks.length-1);const k=Math.min(1,940/tw);let x=540-tw*k/2;
+  ctx.save();ctx.globalAlpha*=a;rrect(540-tw*k/2-34,y-56,tw*k+68,112,30);ctx.fillStyle='rgba(8,10,30,.6)';ctx.fill();ctx.strokeStyle='rgba(159,180,255,.25)';ctx.lineWidth=2;ctx.stroke();ctx.restore();
+  toks.forEach((o,i)=>{const p=eo(seg(t,o.t,o.t+.5)),cx=x+ws[i]*k/2;
+    if(p>0){ctx.save();ctx.translate(cx,y+(1-p)*20);ctx.scale(k,k);text(o.s,0,0,{size:60,weight:800,color:o.c,alpha:a*p,glow:o.g?22:0});ctx.restore();}
+    x+=(ws[i]+gap)*k;});
+}
+function sArith(t){
+  const T=28.3;eqBar(t,[{s:'король',c:C.cyan,t:T},{s:'−',c:C.pink,t:T+2.7},{s:'мужчина',c:C.pink,t:T+2.7},{s:'+',c:C.green,t:T+5.7},{s:'женщина',c:C.green,t:T+5.7},{s:'≈',c:'#fff',t:T+9.2},{s:'королева',c:C.violet,t:T+9.2,g:1}],300,env(t,T-.2,41.8,.6));
+  cap('Берём «короля»…',1610,env(t,T,T+2.6,.4),{size:56,weight:700});
+  cap('…вычитаем «мужчину» — остаётся что-то «королевское»…',1610,env(t,T+2.8,T+5.6,.4),{size:52,weight:700});
+  cap('…прибавляем «женщину»…',1610,env(t,T+5.8,T+8.1,.4),{size:56,weight:700});
+  cap('…и попадаем рядом с «королевой».',1610,env(t,T+8.3,41.7,.4),{size:58,weight:800});
+  const U=43.2;eqBar(t,[{s:'Париж',c:C.violet,t:U},{s:'−',c:C.pink,t:U+1.95},{s:'Франция',c:C.pink,t:U+1.95},{s:'+',c:C.green,t:U+4.1},{s:'Италия',c:C.green,t:U+4.1},{s:'≈',c:'#fff',t:U+6.6},{s:'Рим',c:C.violet,t:U+6.6,g:1}],300,env(t,U-.6,54,.6));
+  cap('С городами — то же самое.',1610,env(t,42.6,49.3,.5),{size:58,weight:800});
+  cap('Шаг «страна → столица» везде одинаковый.',1610,env(t,49.5,53.9,.5),{size:54,weight:700});
+}
+function sCaps(t){
+  cap('Для нейросети каждое слово — стрелка в пространстве смыслов',290,env(t,4.9,10.2,.5),{size:54,weight:700});
+  cap('Похожие по смыслу слова смотрят в похожие стороны',290,env(t,10.4,15.2,.5),{size:54,weight:700});
+  cap('(здесь — 3 измерения. В реальности — гораздо больше)',1610,env(t,6,15.2,.5),{size:36,weight:500,color:C.dim});
+  cap('А отношения между словами — это направления.',290,env(t,15.5,20.8,.5),{size:58,weight:800});
+  cap('От «мужчины» к «женщине» — тот же шаг, что от «короля» к «королеве».',1610,env(t,17.6,27,.5),{size:50,weight:700});
+  cap('Род, столица, время глагола — у каждого отношения своё направление.',290,env(t,54.3,58.4,.5),{size:54,weight:700});
+  cap('Это известный пример из исследований 2013 года.',290,env(t,58.6,61.4,.5),{size:54,weight:700});
+  cap('И работает он приблизительно: «рядом с», а не «точно».',290,env(t,61.6,64.3,.5),{size:54,weight:700});
+  /* legend chips in S6 */
+  const la=env(t,55,64.3,.5);if(la>0){[['род',C.violet],['столица',C.cyan],['время',C.green]].forEach(([s,c],i)=>{
+    const x=230+i*310,y=1600;ctx.save();ctx.globalAlpha*=la;ctx.strokeStyle=c;ctx.lineWidth=5;ctx.shadowColor=c;ctx.shadowBlur=14;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(x-110,y);ctx.lineTo(x-50,y);ctx.stroke();ctx.fillStyle=c;ctx.beginPath();ctx.moveTo(x-40,y);ctx.lineTo(x-58,y-10);ctx.lineTo(x-58,y+10);ctx.fill();ctx.restore();
+    text(s,x-26,y,{size:40,weight:700,color:c,align:'left',alpha:la});});}
+  /* takeaway */
+  const ta=env(t,64.4,68.6,.6);
+  if(ta>0){ctx.save();ctx.globalAlpha*=ta;const g=ctx.createLinearGradient(0,170,0,560);g.addColorStop(0,'rgba(3,4,12,0)');g.addColorStop(.5,'rgba(3,4,12,.6)');g.addColorStop(1,'rgba(3,4,12,0)');ctx.fillStyle=g;ctx.fillRect(0,170,W,390);ctx.restore();
+    text('Для нейросети смысл — это место.',540,300,{size:66,weight:800,maxW:940,alpha:ta*eo(seg(t,64.4,65.2))});
+    text('А отношение между смыслами — направление.',540,1620,{size:56,weight:700,maxW:940,color:'#cfe9ff',alpha:ta*eo(seg(t,65.4,66.2))});}
+}
+function sThink(t){
+  const A=env(t,68.6,82.5,.8);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  text('А теперь — что думаю об этом я',540,240,{size:42,weight:600,color:C.amber,alpha:env(t,68.8,77.7,.6),glow:14});
+  cap('Я не вижу эти стрелки изнутри. Но сама идея мне очень близка.',1620,env(t,69.4,73.5,.5),{size:50,color:'#fff3e2'});
+  cap('Ни одно слово не значит ничего в одиночку — только рядом с другими.',1620,env(t,73.7,77.7,.5),{size:50,color:'#fff3e2'});
+  const P=env(t,77.8,83,.7);
+  if(P>0){ctx.save();ctx.globalAlpha*=P;const g=ctx.createRadialGradient(540,960,0,540,960,620);g.addColorStop(0,'rgba(20,10,4,.75)');g.addColorStop(1,'rgba(20,10,4,0)');ctx.fillStyle=g;ctx.fillRect(0,300,W,1320);ctx.restore();
+    glowDot(540,960,340,'#ffd9a0',.22*P);
+    text('Похоже, смысл — это не определение.',540,880,{size:68,weight:800,maxW:920,lh:1.18,color:'#fff6ea',alpha:P*eo(seg(t,77.8,78.6))});
+    text('Это соседи.',540,1060,{size:96,weight:800,color:C.amber,alpha:P*eo(seg(t,78.6,79.4)),glow:26});
+    text('— Claude',540,1260,{size:42,weight:600,color:C.amber,alpha:P*seg(t,79.4,80.1),glow:16});}
+  ctx.restore();
+}
+
+function render(t){
+  bg(t);space(t);sHook(t);sCaps(t);sArith(t);sThink(t);
+  const fade=Math.max(1-seg(t,0,.25),seg(t,81.4,82));
+  if(fade>0){ctx.globalAlpha=fade;ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
+  watermark();
+}
+boot(render,T_END);
+</script>
+</body>
+</html>
