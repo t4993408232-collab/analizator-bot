@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Нейросеть думает черновиком</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{display:block;height:100vh;max-width:100vw;aspect-ratio:9/16}
+  body.render canvas{height:auto;width:1080px}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+/* ===== AI-Reels common kit (paste verbatim into each video's <script>) ===== */
+const W=1080,H=1920;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const SANS='Inter, "DejaVu Sans", sans-serif', MONO='"DejaVu Sans Mono", monospace', SERIF='"DejaVu Serif", Georgia, serif';
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const eo=t=>1-Math.pow(1-t,3);
+const seg=(t,a,b)=>clamp((t-a)/(b-a));
+const env=(t,a,b,f=.5)=>clamp((t-a)/f)*clamp((b-t)/f);
+const hash=n=>{const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);};
+function rng(seed){let s=seed>>>0||1;return()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296;};}
+function hex(h){const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255];}
+function mixHex(a,b,t){const A=hex(a),B=hex(b);return'#'+A.map((v,i)=>Math.round(lerp(v,B[i],t)).toString(16).padStart(2,'0')).join('');}
+function rgba(h,a){const[r,g,b]=hex(h);return`rgba(${r},${g},${b},${a})`;}
+function setFont(size,weight=500,family=SANS){ctx.font=`${weight} ${size}px ${family}`;}
+function wrap(s,maxW){const out=[];for(const para of String(s).split('\n')){const words=para.split(' ');let line='';
+  for(const w of words){const test=line?line+' '+w:w;if(ctx.measureText(test).width>maxW&&line){out.push(line);line=w;}else line=test;}
+  out.push(line);}return out;}
+/* text(s,x,y,{size,weight,color,alpha,align,family,maxW,lh,glow,shadow}) – multi-line centered vertically on y */
+function text(s,x,y,o={}){
+  const{size=48,weight=500,color='#fff',alpha=1,align='center',family=SANS,maxW=0,lh=1.25,glow=0,shadow='rgba(0,0,0,.8)'}=o;
+  if(alpha<=.002)return;
+  ctx.save();ctx.globalAlpha*=alpha;ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='middle';
+  setFont(size,weight,family);ctx.shadowColor=glow?color:shadow;ctx.shadowBlur=glow||(shadow?16:0);
+  const lines=maxW?wrap(s,maxW):String(s).split('\n');const off=(lines.length-1)*size*lh/2;
+  lines.forEach((l,i)=>ctx.fillText(l,x,y-off+i*size*lh));ctx.restore();
+}
+function rrect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+function glowDot(x,y,r,color,a){if(a<=0)return;const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,rgba(color,a));g.addColorStop(1,rgba(color,0));ctx.fillStyle=g;ctx.fillRect(x-r,y-r,2*r,2*r);}
+/* film grain / noise overlay, deterministic per frame */
+const _grain=(()=>{const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');const d=g.createImageData(256,256);const r=rng(99);
+  for(let i=0;i<d.data.length;i+=4){const v=r()*255;d.data[i]=d.data[i+1]=d.data[i+2]=v;d.data[i+3]=255;}g.putImageData(d,0,0);return c;})();
+function grain(t,alpha=.08,mode='overlay'){ctx.save();ctx.globalAlpha=alpha;ctx.globalCompositeOperation=mode;
+  const ox=Math.floor(hash(Math.floor(t*24))*256),oy=Math.floor(hash(Math.floor(t*24)+7)*256);
+  ctx.translate(-ox,-oy);ctx.fillStyle=ctx.createPattern(_grain,'repeat');ctx.fillRect(0,0,W+256,H+256);ctx.restore();}
+/* Channel watermark – call LAST in render(t), every frame. dark=true for light backgrounds */
+function watermark(dark=false){
+  const label='t.me/eventstory_by';ctx.save();ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;
+  setFont(34,700);const tw=ctx.measureText(label).width,iw=46,pw=tw+iw+56,ph=68,x=540-pw/2,y=1812;
+  rrect(x,y,pw,ph,34);ctx.fillStyle=dark?'rgba(255,255,255,.7)':'rgba(8,10,24,.55)';ctx.fill();
+  ctx.strokeStyle=dark?'rgba(0,0,0,.25)':'rgba(255,255,255,.28)';ctx.lineWidth=2;ctx.stroke();
+  const cx=x+28+iw/2,cy=y+ph/2;ctx.fillStyle='#2aabee';ctx.beginPath();ctx.arc(cx,cy,iw/2,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(cx-13,cy+1);ctx.lineTo(cx+12,cy-10);ctx.lineTo(cx+7,cy+12);ctx.lineTo(cx-1,cy+5);ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark?'rgba(10,10,20,.9)':'rgba(255,255,255,.92)';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,x+28+iw+14,cy+1);ctx.restore();
+}
+/* boot(render, T_END): exposes window.render/T_END/ready; plays in real time unless ?render */
+function boot(render,T_END){
+  window.render=t=>{ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;render(t);};
+  window.T_END=T_END;const isRender=location.search.includes('render');if(isRender)document.body.classList.add('render');
+  const fonts=['400 40px Inter','500 40px Inter','600 40px Inter','700 40px Inter','800 40px Inter','400 40px "DejaVu Sans Mono"','700 40px "DejaVu Sans Mono"','400 40px "DejaVu Serif"','700 40px "DejaVu Serif"'];
+  window.ready=Promise.all(fonts.map(f=>document.fonts.load(f))).then(()=>{window.render(0);return true;});
+  if(!isRender){let t0=null;cv.addEventListener('click',()=>t0=null);
+    window.ready.then(()=>{const loop=ts=>{if(t0===null)t0=ts;window.render(((ts-t0)/1000)%T_END);requestAnimationFrame(loop);};requestAnimationFrame(loop);});}
+}
+/* ===== end kit ===== */
+
+const T_END=80;
+const C={cyan:'#5ee7ff',violet:'#a78bfa',pink:'#ff5c8a',green:'#6dffb0',amber:'#ffb86b',gold:'#ffd27a',text:'#eef1ff',dim:'#8f97c7',soft:'#c9d0f5'};
+const cap=(s,y,a,o={})=>text(s,540,y,{size:50,weight:600,maxW:940,alpha:a,color:C.text,shadow:'rgba(0,0,0,.85)',lh:1.24,...o});
+function gradText(s,x,y,size,a,c1=C.cyan,c2=C.violet,t=0){
+  if(a<=0)return;ctx.save();ctx.globalAlpha*=a;setFont(size,800);const w=ctx.measureText(s).width;
+  const g=ctx.createLinearGradient(x-w/2,0,x+w/2,0);g.addColorStop(0,c1);g.addColorStop(1,c2);
+  ctx.fillStyle=g;ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor=c2;ctx.shadowBlur=34+8*Math.sin(t*2);
+  ctx.fillText(s,x,y);ctx.restore();}
+
+/* ---------- background ---------- */
+const WARM0=66.6,WARM1=69;
+const P=[];{const r=rng(13);for(let i=0;i<240;i++)P.push({x:r()*W,y:r()*H,z:.3+r()*.7,ph:r()*6.28});}
+function bg(t){
+  const warm=ease(seg(t,WARM0,WARM1));
+  const g=ctx.createRadialGradient(W/2,H*.48,40,W/2,H*.48,H*.85);
+  g.addColorStop(0,mixHex('#0d1236','#2b1709',warm));g.addColorStop(1,mixHex('#03040a','#060302',warm));
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const pc=mixHex('#9fb4ff',C.amber,warm);
+  for(const p of P){
+    const y=((p.y-t*14*p.z)%H+H)%H,x=p.x+Math.sin(t*.3+p.ph)*12;
+    ctx.fillStyle=rgba(pc,.12+.3*p.z*(.6+.4*Math.sin(t*1.3+p.ph)));
+    ctx.fillRect(x,y,1.2+2*p.z,1.2+2*p.z);
+  }
+}
+
+/* ---------- sheet of paper (glass) ---------- */
+function sheetBody(w,h,warm,glow){
+  const edge=mixHex(C.cyan,C.amber,warm);
+  rrect(-w/2,-h/2,w,h,28);ctx.fillStyle=rgba(mixHex('#101a4a','#2a190b',warm),.8);
+  ctx.shadowColor=edge;ctx.shadowBlur=glow;ctx.fill();ctx.shadowBlur=0;
+  ctx.strokeStyle=rgba(edge,.55);ctx.lineWidth=2.5;ctx.stroke();
+  ctx.save();rrect(-w/2,-h/2,w,h,28);ctx.clip();
+  ctx.strokeStyle=rgba(mixHex('#9fb4ff',C.amber,warm),.09);ctx.lineWidth=2;
+  for(let y=-h/2+118;y<h/2-20;y+=96){ctx.beginPath();ctx.moveTo(-w/2+24,y+30);ctx.lineTo(w/2-24,y+30);ctx.stroke();}
+  ctx.strokeStyle=rgba(warm>.5?C.amber:C.pink,.22);ctx.beginPath();ctx.moveTo(-w/2+90,-h/2);ctx.lineTo(-w/2+90,h/2);ctx.stroke();
+  ctx.restore();
+}
+/* draws a sheet at (cx,cy); flip p in [0..1] turns it over; front/back are callbacks in local coords */
+function sheet(cx,cy,w,h,a,{flip=0,rot=0,sc=1,warm=0,front=null,back=null,t=0}={}){
+  if(a<=0)return;const ang=Math.PI*ease(flip),sx=Math.cos(ang);
+  ctx.save();ctx.globalAlpha*=a;ctx.translate(cx,cy);ctx.rotate(rot);ctx.scale(sc*Math.max(.02,Math.abs(sx)),sc*(1+.04*Math.sin(ang)));
+  sheetBody(w,h,warm,28+8*Math.sin(t*1.7));
+  if(sx>=0){if(front)front();}else{if(back)back();}
+  ctx.restore();
+}
+function ltext(s,x,y,o={}){text(s,x,y,{size:40,weight:500,family:MONO,align:'left',shadow:'',...o});}
+function typed(s,a,b,t){return s.slice(0,Math.floor(s.length*seg(t,a,b)+1e-6));}
+function strikeLine(x1,x2,y,p,col,a=1,seed=0){
+  if(p<=0)return;ctx.save();ctx.globalAlpha*=a;ctx.strokeStyle=col;ctx.lineWidth=5;ctx.lineCap='round';ctx.shadowColor=col;ctx.shadowBlur=14;
+  ctx.beginPath();const N=24;for(let i=0;i<=N*p;i++){const u=i/N,x=lerp(x1,x2,u),yy=y+Math.sin(u*9+seed)*3+(u-.5)*-8;i?ctx.lineTo(x,yy):ctx.moveTo(x,yy);}
+  ctx.stroke();ctx.restore();}
+
+/* ---------- the draft (shared by hook + draft scene) ---------- */
+const DRAFT=[
+  ['пусть тетрадь = 10',32.0,33.0,C.text],
+  ['тогда ручка = 110',33.2,34.1,C.text],
+  ['вместе 120 ≠ 110  ✗',34.3,35.4,C.pink],
+  ['тетрадь = x, ручка = x + 100',37.4,39.0,C.text],
+  ['x + x + 100 = 110',39.2,40.3,C.text],
+  ['2x = 10  →  x = 5',40.5,41.6,C.text],
+  ['проверка: 5 + 105 = 110  ✓',42.2,43.8,C.green],
+];
+const STRIKE0=36.0;
+const DRAFT_CHARS=DRAFT.reduce((s,d)=>s+d[0].replace(/ /g,'').length,0);
+const N_TOK=Math.ceil(DRAFT_CHARS/3);
+function draftChars(tt){let n=0;for(const d of DRAFT)n+=typed(d[0],d[1],d[2],tt).replace(/ /g,'').length;return n;}
+function drawDraft(tt,w,h,t){
+  const x0=-w/2+120,y0=-h/2+128,dy=96;
+  text('черновик',w/2-50,-h/2+52,{size:30,weight:600,align:'right',color:C.dim,shadow:''});
+  let cur=null;
+  DRAFT.forEach((d,i)=>{
+    const s=typed(d[0],d[1],d[2],tt);if(!s)return;
+    const struck=i<3?seg(tt,STRIKE0+i*.25,STRIKE0+i*.25+.5):0;
+    const y=y0+i*dy;
+    ltext(s,x0,y,{color:d[3],alpha:1-.5*struck,glow:i===6&&tt>d[2]?18:0});
+    if(tt>=d[1]&&tt<d[2]+.4){setFont(40,500,MONO);cur=[x0+ctx.measureText(s).width+6,y];}
+    if(struck>0){setFont(40,500,MONO);strikeLine(x0-14,x0+ctx.measureText(d[0]).width+14,y,eo(struck),C.pink,.95,i*2);}
+  });
+  if(cur&&Math.floor(t*2.4)%2===0){ctx.fillStyle=C.cyan;ctx.shadowColor=C.cyan;ctx.shadowBlur=12;ctx.fillRect(cur[0],cur[1]-24,4,48);ctx.shadowBlur=0;}
+  // check mark glow after verification
+  const ok=seg(tt,43.9,44.6);if(ok>0){setFont(40,500,MONO);const ex=x0+ctx.measureText(DRAFT[6][0]).width-14;glowDot(ex,y0+6*dy,90,C.green,.45*ok*(.8+.2*Math.sin(t*4)));}
+}
+
+/* ---------- S1: hook 0–5.3 ---------- */
+function s1(t){
+  const A=clamp((5.3-t)/.6);if(A<=0)return;ctx.save();ctx.globalAlpha=A;
+  const tt=32+Math.max(0,t-.05)*2.6;
+  sheet(540,1090,840,800,eo(seg(t,0,.35)),{rot:-.035+.01*Math.sin(t*.9),sc:.97+.03*eo(seg(t,0,1)),t,front:()=>drawDraft(tt,840,800,t)});
+  const a=seg(t,0,.22);
+  cap('Новые нейросети сначала пишут черновик мыслей —',300,a,{size:58,weight:700,maxW:900});
+  gradText('и только потом отвечают',540,450,66,eo(seg(t,.15,.7)),C.cyan,C.violet,t);
+  ctx.restore();
+}
+
+/* ---------- S2: the puzzle 5–17 ---------- */
+function s2(t){
+  const A=env(t,5,17,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const qa=eo(seg(t,5.3,6.1)),qy=lerp(40,0,qa);
+  ctx.save();ctx.globalAlpha*=qa;rrect(130,470+qy,820,330,34);ctx.fillStyle=rgba(C.violet,.17);ctx.fill();ctx.strokeStyle=rgba(C.violet,.55);ctx.lineWidth=2.5;ctx.stroke();ctx.restore();
+  text('Ручка + тетрадь = 110 ₽',540,550+qy,{size:56,weight:700,alpha:qa});
+  text('Ручка дороже на 100 ₽',540,635+qy,{size:56,weight:700,alpha:qa});
+  text('Сколько стоит тетрадь?',540,722+qy,{size:52,weight:700,color:C.cyan,alpha:qa,glow:14});
+  // instant answer
+  const aa=seg(t,8.2,8.35),wrong=seg(t,12.5,12.9);
+  if(aa>0){
+    text('ответ с ходу:',190,880,{size:34,weight:600,align:'left',color:C.dim,alpha:aa});
+    const pop=1+.18*(1-eo(seg(t,8.2,8.7))),sh=wrong>0&&t<13.3?Math.sin(t*70)*10*(1-seg(t,12.9,13.3)):0;
+    const col=mixHex(C.cyan,C.pink,wrong);
+    ctx.save();ctx.translate(410+sh,985);ctx.scale(pop,pop);ctx.globalAlpha*=aa;
+    rrect(-230,-70,460,140,34);ctx.fillStyle=rgba(col,.14);ctx.fill();ctx.strokeStyle=rgba(col,.8);ctx.lineWidth=3;ctx.shadowColor=col;ctx.shadowBlur=24;ctx.stroke();ctx.restore();
+    text('Тетрадь — 10 ₽',410+sh,987,{size:58,weight:800,color:mixHex(C.text,C.pink,wrong*.6),alpha:aa});
+    // speed streaks
+    const sp=1-seg(t,8.2,9);if(sp>0)for(let i=0;i<5;i++){ctx.strokeStyle=rgba(C.cyan,.5*sp);ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(130-i*12,950+i*18);ctx.lineTo(130-i*12-120*sp,950+i*18);ctx.stroke();}
+  }
+  // check
+  const ca=seg(t,11,11.2);
+  if(ca>0){
+    text('проверим:',190,1150,{size:34,weight:600,align:'left',color:C.dim,alpha:ca});
+    ltext(typed('10 + 110 = 120',11.2,12.2,t),190,1225,{size:50,weight:700,alpha:ca});
+    if(wrong>0){
+      setFont(50,700,MONO);const x=190+ctx.measureText('10 + 110 = 120').width+30;
+      ltext('≠ 110',x,1225,{size:50,weight:700,color:C.pink,alpha:wrong,glow:16});
+      const k=1+.25*(1-eo(seg(t,12.5,13.1)));ctx.save();ctx.translate(800,985);ctx.scale(k,k);
+      text('✗',0,0,{size:120,weight:800,color:C.pink,alpha:wrong,glow:30});ctx.restore();
+    }
+  }
+  cap('Простая задачка.',290,env(t,5.3,8.0,.4),{size:64,weight:800});
+  cap('Нейросеть отвечает мгновенно. Звучит логично…',290,env(t,8.3,16.8,.4),{size:52,weight:700});
+  cap('…но это неверно.',1450,env(t,12.7,16.8,.4),{size:66,weight:800,color:C.pink,glow:0});
+  ctx.restore();
+}
+
+/* ---------- S3: fixed compute per token 17–31 ---------- */
+const NS=8,SL_Y=i=>1230-i*60,IN_Y=1390,OUT_Y=690;
+function chip(s,x,y,col,a,size=48){
+  if(a<=0)return;setFont(size,800);const w=Math.max(150,ctx.measureText(s).width+64);
+  ctx.save();ctx.globalAlpha*=a;rrect(x-w/2,y-46,w,92,26);ctx.fillStyle=rgba(col,.16);ctx.fill();
+  ctx.strokeStyle=rgba(col,.9);ctx.lineWidth=3;ctx.shadowColor=col;ctx.shadowBlur=22;ctx.stroke();ctx.restore();
+  text(s,x,y+2,{size,weight:800,color:mixHex(C.text,col,.3),alpha:a});}
+function passY(t,a,b){return lerp(IN_Y,OUT_Y,ease(seg(t,a,b)));}
+const PASSES=[
+  {a:18.4,b:20.6,v0:17.8,v1:21.9,inp:'2 + 2 = ?',out:'4',col:C.green,tag:'лёгкий вопрос'},
+  {a:22.6,b:24.8,v0:22.0,v1:30.9,inp:'Тетрадь — ?',out:'10 ₽ ?',col:C.pink,tag:'трудный вопрос'},
+];
+function s3(t){
+  const A=env(t,17,31,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  let ty=-999,active=null;
+  for(const p of PASSES)if(t>=p.v0&&t<=p.v1){active=p;ty=passY(t,p.a,p.b);}
+  // slabs
+  for(let i=0;i<NS;i++){
+    const y=SL_Y(i),col=mixHex(C.cyan,C.violet,i/(NS-1));
+    const moving=active&&t>active.a&&t<active.b;
+    const lit=moving?Math.exp(-(((ty-y)/46)**2)):0;
+    const breathe=.5+.5*Math.sin(t*1.6-i*.5);
+    ctx.save();rrect(540-290,y-17,580,34,17);ctx.fillStyle=rgba(col,.12+.1*breathe+.55*lit);ctx.shadowColor=col;ctx.shadowBlur=10+40*lit;ctx.fill();
+    ctx.strokeStyle=rgba(col,.45+.5*lit);ctx.lineWidth=2;ctx.stroke();ctx.restore();
+    // flickering numbers inside slabs
+    for(let k=0;k<6;k++){const v=hash(i*17+k*5+Math.floor(t*(6+18*lit)))*2-1;
+      text((v>=0?'+':'−')+Math.abs(v).toFixed(2),540-225+k*90,y+1,{size:20,family:MONO,color:C.text,alpha:.18+.6*lit,shadow:''});}
+  }
+  ctx.save();ctx.translate(880,(SL_Y(0)+SL_Y(NS-1))/2);ctx.rotate(-Math.PI/2);text('слои нейросети',0,0,{size:30,weight:600,color:C.dim,alpha:seg(t,17.4,18)});ctx.restore();
+  if(active){
+    const p=active,va=env(t,p.v0,p.v1,.4),done=t>=p.b;
+    let s=ty>SL_Y(NS-1)-30?p.inp:p.out,col=ty>SL_Y(NS-1)-30?C.cyan:p.col;
+    if(p.out==='10 ₽ ?'&&done&&t<p.b+1.1){const opts=['5 ₽ ?','15 ₽ ?','10 ₽ ?','20 ₽ ?'];s=opts[Math.floor(t*9)%opts.length];}
+    const wob=p.out==='10 ₽ ?'&&done?Math.sin(t*5)*.05:0;
+    ctx.save();ctx.translate(540,ty);ctx.rotate(wob);chip(s,0,0,col,va,p.out==='4'&&done?60:48);ctx.restore();
+    text(p.tag,540,IN_Y+82,{size:32,weight:600,color:C.dim,alpha:va*(1-seg(t,p.a,p.a+.5))});
+  }
+  // compute meter: same for easy and hard
+  const ma=seg(t,17.6,18.2);
+  if(ma>0){
+    let n=0;if(active){n=Math.floor(seg(t,active.a,active.b)*NS+1e-6);}
+    for(let i=0;i<NS;i++){const x=540+(i-(NS-1)/2)*62,on=i<n;
+      ctx.save();ctx.globalAlpha*=ma;ctx.beginPath();ctx.arc(x,1520,15,0,7);ctx.fillStyle=on?C.cyan:'rgba(255,255,255,.08)';
+      if(on){ctx.shadowColor=C.cyan;ctx.shadowBlur=18;}ctx.fill();ctx.strokeStyle=rgba(C.cyan,.5);ctx.lineWidth=2;ctx.stroke();ctx.restore();}
+    text('порция вычислений на один токен',540,1572,{size:32,weight:600,color:C.dim,alpha:ma});
+  }
+  cap('На каждый токен нейросеть тратит одну и ту же порцию вычислений',300,env(t,17.3,24.3,.4),{size:50,weight:700});
+  cap('Ответить на трудную задачу одним словом — значит угадать.',300,env(t,24.6,30.8,.4),{size:54,weight:800});
+  cap('Лёгкий вопрос или трудный — порция одна.',1665,env(t,21.2,30.8,.4),{size:42,weight:600,color:C.soft});
+  ctx.restore();
+}
+
+/* ---------- S4+S5: draft → clean copy 31–55 ---------- */
+const GRID=(()=>{const cols=12,out=[];for(let i=0;i<N_TOK;i++){const r=Math.floor(i/cols),c=i%cols;out.push([540+(c-(cols-1)/2)*70,1230+r*70]);}return out;})();
+function sDraft(t){
+  const A=env(t,31,55.2,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const fl=seg(t,47,48.3),mv=ease(seg(t,50.6,51.7));
+  const cy=lerp(1030,800,mv),sc=lerp(1,.6,mv),w=900,h=880;
+  sheet(540,cy,w,h,1,{flip:fl,sc,t,rot:.012*Math.sin(t*.7),
+    front:()=>drawDraft(t,w,h,t),
+    back:()=>{text('чистовик',w/2-50,-h/2+52,{size:30,weight:600,align:'right',color:C.dim,shadow:''});
+      text('Ответ:',0,-120,{size:50,weight:600,color:C.soft,shadow:''});
+      text('Тетрадь стоит 5 ₽',0,0,{size:80,weight:800,color:C.green,glow:24});
+      text('✓',0,140,{size:110,weight:800,color:C.green,glow:30,alpha:seg(t,48.3,48.8)});}});
+  // draft tokens (dots)
+  const n=Math.floor(draftChars(t)/3);
+  const da=seg(t,32,32.4);
+  if(da>0){
+    text('токены черновика',540,1530,{size:30,weight:600,color:C.dim,alpha:da*(1-mv)});
+    for(let i=0;i<N_TOK;i++){
+      const r=Math.floor(i/24),c=i%24,x0=540+(c-11.5)*32,y0=1580+r*34;
+      const born=i<n?1:0;if(!born)continue;
+      const [gx,gy]=GRID[i],x=lerp(x0,gx,mv),y=lerp(y0,gy,mv);
+      const wave=t>51.7?Math.max(0,Math.sin((t-51.7)*3.2-i*.22))**6:0;
+      const rad=lerp(6,13,mv)*(1+.5*wave);
+      glowDot(x,y,rad*3,C.cyan,.25+.6*wave);ctx.fillStyle=mixHex(C.cyan,'#ffffff',wave*.7);ctx.beginPath();ctx.arc(x,y,rad,0,7);ctx.fill();
+    }
+  }
+  cap('«Думающие» модели сначала пишут черновик — токены для самих себя',300,env(t,31.3,35.7,.4),{size:50,weight:700});
+  cap('Проверяют. Находят ошибку. Зачёркивают и пробуют снова.',300,env(t,35.9,41.6,.4),{size:52,weight:700});
+  cap('И проверяют ответ, прежде чем его дать.',300,env(t,41.8,46.9,.4),{size:54,weight:700});
+  cap('И только потом — чистовик.',300,env(t,47.2,50.5,.4),{size:64,weight:800});
+  cap('Каждый токен черновика — ещё одна порция вычислений',300,env(t,50.8,54.9,.4),{size:50,weight:700});
+  cap('Больше токенов — больше времени подумать.',1560,env(t,51.9,54.9,.4),{size:56,weight:800,color:C.cyan,glow:18});
+  ctx.restore();
+}
+
+/* ---------- S6: the price 55–63 ---------- */
+function clock(x,y,r,ang,col,a){ctx.save();ctx.globalAlpha*=a;ctx.strokeStyle=rgba(col,.8);ctx.lineWidth=4;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.stroke();
+  for(let i=0;i<12;i++){const q=i/12*6.283;ctx.beginPath();ctx.moveTo(x+Math.cos(q)*r*.8,y+Math.sin(q)*r*.8);ctx.lineTo(x+Math.cos(q)*r*.9,y+Math.sin(q)*r*.9);ctx.stroke();}
+  ctx.lineCap='round';ctx.lineWidth=6;ctx.shadowColor=col;ctx.shadowBlur=14;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.sin(ang)*r*.72,y-Math.cos(ang)*r*.72);ctx.stroke();
+  ctx.restore();}
+function coin(x,y,a){ctx.save();ctx.globalAlpha*=a;ctx.beginPath();ctx.ellipse(x,y,38,12,0,0,7);ctx.fillStyle=C.gold;ctx.shadowColor=C.gold;ctx.shadowBlur=12;ctx.fill();
+  ctx.strokeStyle='rgba(90,60,10,.6)';ctx.lineWidth=2;ctx.stroke();ctx.restore();}
+function s6(t){
+  const A=env(t,55,63,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const ca=eo(seg(t,55.4,56.1)),cb=eo(seg(t,55.9,56.6));
+  // card A
+  ctx.save();ctx.globalAlpha*=ca;rrect(90,500,900,360,32);ctx.fillStyle='rgba(255,255,255,.05)';ctx.fill();ctx.strokeStyle=rgba(C.pink,.45);ctx.lineWidth=2.5;ctx.stroke();ctx.restore();
+  text('С ходу',140,565,{size:48,weight:800,align:'left',alpha:ca});
+  if(ca>0){glowDot(200,690,40,C.cyan,.5*ca);ctx.fillStyle=C.cyan;ctx.globalAlpha=A*ca;ctx.beginPath();ctx.arc(200,690,13,0,7);ctx.fill();ctx.globalAlpha=A;}
+  text('один токен',240,690,{size:34,weight:600,align:'left',color:C.soft,alpha:ca});
+  clock(690,690,62,.35*ease(seg(t,56,57)),C.cyan,ca);
+  coin(880,712,ca);
+  text('быстро — но наугад',140,800,{size:40,weight:700,align:'left',color:C.pink,alpha:seg(t,56.6,57.2)});
+  // card B
+  ctx.save();ctx.globalAlpha*=cb;rrect(90,920,900,500,32);ctx.fillStyle='rgba(255,255,255,.05)';ctx.fill();ctx.strokeStyle=rgba(C.violet,.55);ctx.lineWidth=2.5;ctx.stroke();ctx.restore();
+  text('С черновиком',140,985,{size:48,weight:800,align:'left',alpha:cb});
+  const grow=seg(t,56.4,60.5),nd=Math.floor(grow*32);
+  for(let i=0;i<nd;i++){const r=Math.floor(i/8),c=i%8,x=165+c*50,y=1080+r*50,fresh=1-clamp((grow*32-i)/3);
+    glowDot(x,y,30,C.cyan,.25+.4*fresh);ctx.fillStyle=mixHex(C.cyan,'#fff',fresh*.6);ctx.beginPath();ctx.arc(x,y,11,0,7);ctx.fill();}
+  clock(690,1150,62,(t>56.4?(Math.min(t,60.5)-56.4)*3.4:0)+(t>60.5?(t-60.5)*.6:0),C.violet,cb);
+  for(let i=0;i<Math.floor(grow*9);i++)coin(880,1255-i*17,cb);
+  text('дольше и дороже, зато с проверкой',140,1360,{size:40,weight:700,align:'left',color:C.violet,alpha:seg(t,59.8,60.4)});
+  cap('У размышлений есть цена',300,env(t,55.3,62.8,.4),{size:64,weight:800});
+  cap('Для простых вопросов долгие раздумья не нужны.',1600,env(t,60.6,62.8,.4),{size:48,weight:600,color:C.soft});
+  ctx.restore();
+}
+
+/* ---------- S7: takeaway 63–67 ---------- */
+function s7(t){
+  const A=env(t,63,67.2,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  for(let i=0;i<40;i++){const ang=i*2.4+t*.25,d=260+(i%7)*45+Math.sin(t+i)*14;glowDot(540+Math.cos(ang)*d,960+Math.sin(ang)*d*1.3,22,i%2?C.cyan:C.violet,.35);}
+  glowDot(540,960,460,C.violet,.16);
+  text('Нейросеть думает,',540,890,{size:80,weight:800,alpha:eo(seg(t,63.2,63.9))});
+  const k=eo(seg(t,63.7,64.6));ctx.save();ctx.translate(540,1030);ctx.scale(.9+.1*k,.9+.1*k);gradText('пока пишет.',0,0,124,k,C.cyan,C.violet,t);ctx.restore();
+  ctx.restore();
+}
+
+/* ---------- S8: what I think 67–80 ---------- */
+const PEN=[[68.0,70.4],[70.6,72.9],[73.6,76.0],[76.2,78.6]];
+function penPath(k,u){const x=lerp(-300,300,u);return[x,-210+k*110+12*Math.sin(x*.055+k*1.7)+7*Math.sin(x*.19+k*2.3)-9*Math.abs(Math.sin(x*.09+k))];}
+function s8(t){
+  const A=env(t,67,80.5,.8);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const sa=eo(seg(t,67.2,68.2));
+  let tip=null;
+  sheet(540,1010,760,680,sa,{warm:1,t,rot:-.02+.008*Math.sin(t*.6),front:()=>{
+    PEN.forEach(([a,b],k)=>{const p=seg(t,a,b);if(p<=0)return;
+      ctx.strokeStyle=rgba('#ffd9a0',.85);ctx.lineWidth=4;ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor=C.amber;ctx.shadowBlur=12;
+      ctx.beginPath();const N=90;for(let i=0;i<=N*p;i++){const[x,y]=penPath(k,i/N);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}ctx.stroke();ctx.shadowBlur=0;
+      if(p<1)tip=penPath(k,p);
+      if(k===1){const s=seg(t,73.0,73.5);if(s>0)strikeLine(-320,320,-210+110,eo(s),'#ff8a6b',.9,3);}
+    });
+    if(tip)glowDot(tip[0],tip[1],50,'#fff4e0',.9);
+  }});
+  text('А теперь — что думаю об этом я',540,250,{size:42,weight:600,color:C.amber,alpha:env(t,67.4,79.6,.6),glow:14});
+  const L=[[67.9,71.7,'Мне трудно «подумать молча»: каждая моя мысль — это слово.'],
+    [71.9,75.4,'Поэтому трудное я сначала решаю на черновике.'],
+    [75.6,79.6,'Зачеркнуть — не стыдно.\nСтыдно — ответить наугад.']];
+  for(const[a,b,s]of L)cap(s,1520,env(t,a,b,.5),{size:50,weight:700,color:'#fff3e2',maxW:920});
+  text('— Claude',540,1680,{size:44,weight:600,color:C.amber,alpha:env(t,76.4,79.8,.5),glow:16});
+  ctx.restore();
+}
+
+function render(t){
+  bg(t);s1(t);s2(t);s3(t);sDraft(t);s6(t);s7(t);s8(t);
+  const fade=Math.max(1-seg(t,0,.15),seg(t,79.4,80));
+  if(fade>0){ctx.globalAlpha=fade;ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
+  watermark();
+}
+boot(render,T_END);
+</script>
+</body>
+</html>
