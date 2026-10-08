@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Почему нейросеть не считает буквы</title>
+<style>
+  html,body{margin:0;height:100%;background:#03040a;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{display:block;height:100vh;max-width:100vw;aspect-ratio:9/16}
+  body.render canvas{height:auto;width:1080px}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+/* ===== AI-Reels common kit (paste verbatim into each video's <script>) ===== */
+const W=1080,H=1920;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const SANS='Inter, "DejaVu Sans", sans-serif', MONO='"DejaVu Sans Mono", monospace', SERIF='"DejaVu Serif", Georgia, serif';
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const eo=t=>1-Math.pow(1-t,3);
+const seg=(t,a,b)=>clamp((t-a)/(b-a));
+const env=(t,a,b,f=.5)=>clamp((t-a)/f)*clamp((b-t)/f);
+const hash=n=>{const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);};
+function rng(seed){let s=seed>>>0||1;return()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296;};}
+function hex(h){const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255];}
+function mixHex(a,b,t){const A=hex(a),B=hex(b);return'#'+A.map((v,i)=>Math.round(lerp(v,B[i],t)).toString(16).padStart(2,'0')).join('');}
+function rgba(h,a){const[r,g,b]=hex(h);return`rgba(${r},${g},${b},${a})`;}
+function setFont(size,weight=500,family=SANS){ctx.font=`${weight} ${size}px ${family}`;}
+function wrap(s,maxW){const out=[];for(const para of String(s).split('\n')){const words=para.split(' ');let line='';
+  for(const w of words){const test=line?line+' '+w:w;if(ctx.measureText(test).width>maxW&&line){out.push(line);line=w;}else line=test;}
+  out.push(line);}return out;}
+/* text(s,x,y,{size,weight,color,alpha,align,family,maxW,lh,glow,shadow}) – multi-line centered vertically on y */
+function text(s,x,y,o={}){
+  const{size=48,weight=500,color='#fff',alpha=1,align='center',family=SANS,maxW=0,lh=1.25,glow=0,shadow='rgba(0,0,0,.8)'}=o;
+  if(alpha<=.002)return;
+  ctx.save();ctx.globalAlpha*=alpha;ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='middle';
+  setFont(size,weight,family);ctx.shadowColor=glow?color:shadow;ctx.shadowBlur=glow||(shadow?16:0);
+  const lines=maxW?wrap(s,maxW):String(s).split('\n');const off=(lines.length-1)*size*lh/2;
+  lines.forEach((l,i)=>ctx.fillText(l,x,y-off+i*size*lh));ctx.restore();
+}
+function rrect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+function glowDot(x,y,r,color,a){if(a<=0)return;const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,rgba(color,a));g.addColorStop(1,rgba(color,0));ctx.fillStyle=g;ctx.fillRect(x-r,y-r,2*r,2*r);}
+/* film grain / noise overlay, deterministic per frame */
+const _grain=(()=>{const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');const d=g.createImageData(256,256);const r=rng(99);
+  for(let i=0;i<d.data.length;i+=4){const v=r()*255;d.data[i]=d.data[i+1]=d.data[i+2]=v;d.data[i+3]=255;}g.putImageData(d,0,0);return c;})();
+function grain(t,alpha=.08,mode='overlay'){ctx.save();ctx.globalAlpha=alpha;ctx.globalCompositeOperation=mode;
+  const ox=Math.floor(hash(Math.floor(t*24))*256),oy=Math.floor(hash(Math.floor(t*24)+7)*256);
+  ctx.translate(-ox,-oy);ctx.fillStyle=ctx.createPattern(_grain,'repeat');ctx.fillRect(0,0,W+256,H+256);ctx.restore();}
+/* Channel watermark – call LAST in render(t), every frame. dark=true for light backgrounds */
+function watermark(dark=false){
+  const label='t.me/eventstory_by';ctx.save();ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;
+  setFont(34,700);const tw=ctx.measureText(label).width,iw=46,pw=tw+iw+56,ph=68,x=540-pw/2,y=1812;
+  rrect(x,y,pw,ph,34);ctx.fillStyle=dark?'rgba(255,255,255,.7)':'rgba(8,10,24,.55)';ctx.fill();
+  ctx.strokeStyle=dark?'rgba(0,0,0,.25)':'rgba(255,255,255,.28)';ctx.lineWidth=2;ctx.stroke();
+  const cx=x+28+iw/2,cy=y+ph/2;ctx.fillStyle='#2aabee';ctx.beginPath();ctx.arc(cx,cy,iw/2,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(cx-13,cy+1);ctx.lineTo(cx+12,cy-10);ctx.lineTo(cx+7,cy+12);ctx.lineTo(cx-1,cy+5);ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark?'rgba(10,10,20,.9)':'rgba(255,255,255,.92)';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,x+28+iw+14,cy+1);ctx.restore();
+}
+/* boot(render, T_END): exposes window.render/T_END/ready; plays in real time unless ?render */
+function boot(render,T_END){
+  window.render=t=>{ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowBlur=0;render(t);};
+  window.T_END=T_END;const isRender=location.search.includes('render');if(isRender)document.body.classList.add('render');
+  const fonts=['400 40px Inter','500 40px Inter','600 40px Inter','700 40px Inter','800 40px Inter','400 40px "DejaVu Sans Mono"','700 40px "DejaVu Sans Mono"','400 40px "DejaVu Serif"','700 40px "DejaVu Serif"'];
+  window.ready=Promise.all(fonts.map(f=>document.fonts.load(f))).then(()=>{window.render(0);return true;});
+  if(!isRender){let t0=null;cv.addEventListener('click',()=>t0=null);
+    window.ready.then(()=>{const loop=ts=>{if(t0===null)t0=ts;window.render(((ts-t0)/1000)%T_END);requestAnimationFrame(loop);};requestAnimationFrame(loop);});}
+}
+/* ===== end kit ===== */
+
+const T_END=66;
+const C={cyan:'#5ee7ff',violet:'#a78bfa',pink:'#ff5c8a',green:'#6dffb0',amber:'#ffb86b',text:'#eef1ff',dim:'#8f97c7'};
+const mix=(a,b,t)=>mixHex(a,b,t);
+const fmtNum=v=>(v>=0?'+':'−')+Math.abs(v).toFixed(2);
+const cap=(s,y,a,o={})=>text(s,540,y,{size:50,weight:600,maxW:940,alpha:a,color:C.text,shadow:'rgba(0,0,0,.85)',lh:1.25,...o});
+const mono=(s,x,y,o={})=>text(s,x,y,{family:MONO,...o});
+
+const WORD='программирование';
+const LET=[...WORD];
+const TOKS=['прог','рамм','иров','ание'];      // условное разбиение (иллюстрация)
+const IS_R=LET.map(c=>c==='р');
+
+/* ---------- background (same DNA as the original) ---------- */
+const P=[];{const r=rng(7);for(let i=0;i<260;i++)P.push({x:r()*W,y:r()*H,z:.3+r()*.7,ph:r()*6.28});}
+const WARM0=57.4,WARM1=59.6;
+function bg(t){
+  const warm=ease(seg(t,WARM0,WARM1));
+  const g=ctx.createRadialGradient(W/2,H*.48,40,W/2,H*.48,H*.85);
+  g.addColorStop(0,mix('#0d1236','#2b1709',warm));g.addColorStop(1,mix('#03040a','#060302',warm));
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const pc=mixHex('#9fb4ff',C.amber,warm);
+  for(const p of P){
+    const y=((p.y-t*14*p.z)%H+H)%H,x=p.x+Math.sin(t*.3+p.ph)*12;
+    ctx.fillStyle=rgba(pc,.12+.3*p.z*(.6+.4*Math.sin(t*1.3+p.ph)));
+    ctx.fillRect(x,y,1.2+2*p.z,1.2+2*p.z);
+  }
+}
+
+/* ---------- primitives ---------- */
+function drawCheck(x,y,s,col,a,prog=1){
+  if(a<=0)return;ctx.save();ctx.globalAlpha*=a;
+  glowDot(x,y,s*2.2,col,.35);
+  ctx.beginPath();ctx.arc(x,y,s,0,7);ctx.fillStyle=rgba(col,.16);ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=Math.max(2,s*.12);ctx.stroke();
+  const pts=[[-.45,.02],[-.12,.35],[.48,-.3]];partial(pts.map(([u,v])=>[x+u*s,y+v*s]),prog);
+  ctx.strokeStyle=col;ctx.lineWidth=Math.max(3,s*.18);ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor=col;ctx.shadowBlur=14;ctx.stroke();
+  ctx.restore();
+}
+function drawCross(x,y,s,col,a,prog=1){
+  if(a<=0)return;ctx.save();ctx.globalAlpha*=a;
+  glowDot(x,y,s*2.2,col,.35);
+  ctx.beginPath();ctx.arc(x,y,s,0,7);ctx.fillStyle=rgba(col,.16);ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=Math.max(2,s*.12);ctx.stroke();
+  ctx.strokeStyle=col;ctx.lineWidth=Math.max(3,s*.18);ctx.lineCap='round';ctx.shadowColor=col;ctx.shadowBlur=14;
+  const d=s*.42,p1=clamp(prog*2),p2=clamp(prog*2-1);
+  ctx.beginPath();ctx.moveTo(x-d,y-d);ctx.lineTo(x-d+2*d*p1,y-d+2*d*p1);
+  if(p2>0){ctx.moveTo(x+d,y-d);ctx.lineTo(x+d-2*d*p2,y-d+2*d*p2);}ctx.stroke();ctx.restore();
+}
+/* path through points, truncated at fraction prog of its length */
+function partial(pts,prog){
+  let L=0;const seglen=[];for(let i=1;i<pts.length;i++){const l=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);seglen.push(l);L+=l;}
+  let rem=L*clamp(prog);ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length&&rem>0;i++){const l=seglen[i-1],k=Math.min(1,rem/l);
+    ctx.lineTo(lerp(pts[i-1][0],pts[i][0],k),lerp(pts[i-1][1],pts[i][1],k));rem-=l;}
+}
+/* token brick */
+function brick(cx,cy,w,h,label,hue,a,fs,glowK=1){
+  if(a<=0)return;ctx.save();ctx.globalAlpha*=a;
+  glowDot(cx,cy,w*.75,hue,.12*glowK);
+  rrect(cx-w/2,cy-h/2,w,h,h*.2);
+  const g=ctx.createLinearGradient(0,cy-h/2,0,cy+h/2);g.addColorStop(0,rgba(hue,.28));g.addColorStop(1,rgba(hue,.10));
+  ctx.fillStyle=g;ctx.fill();ctx.strokeStyle=rgba(hue,.95);ctx.lineWidth=3;ctx.shadowColor=hue;ctx.shadowBlur=18*glowK;ctx.stroke();
+  ctx.restore();
+  if(label)text(label,cx,cy+2,{size:fs,weight:800,color:mix(C.text,hue,.3),alpha:a});
+}
+/* the AI "glasses": two lenses + bridge. tint = lens colour */
+const LENS_W=440,LENS_H=230,LENS_DX=240;
+function glasses(cx,cy,s,tint,a,t,rot=0){
+  if(a<=0)return;ctx.save();ctx.globalAlpha*=a;ctx.translate(cx,cy);ctx.rotate(rot);ctx.scale(s,s);
+  const lw=LENS_W,lh=LENS_H;
+  for(const sx of [-1,1]){
+    const x=sx*LENS_DX;
+    rrect(x-lw/2,-lh/2,lw,lh,lh*.42);
+    const g=ctx.createLinearGradient(x-lw/2,-lh/2,x+lw/2,lh/2);
+    g.addColorStop(0,rgba(tint,.16));g.addColorStop(.5,rgba(tint,.05));g.addColorStop(1,rgba(tint,.13));
+    ctx.fillStyle=g;ctx.fill();
+    ctx.strokeStyle=rgba(tint,.95);ctx.lineWidth=7;ctx.shadowColor=tint;ctx.shadowBlur=26+6*Math.sin(t*2);ctx.stroke();ctx.shadowBlur=0;
+    // glint sweeping across the glass
+    ctx.save();rrect(x-lw/2,-lh/2,lw,lh,lh*.42);ctx.clip();
+    const gx=x-lw/2+((t*.35+(sx>0?.5:0))%1.6)*lw*1.1-lw*.2;
+    const gg=ctx.createLinearGradient(gx-60,0,gx+60,0);gg.addColorStop(0,'rgba(255,255,255,0)');gg.addColorStop(.5,'rgba(255,255,255,.10)');gg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=gg;ctx.translate(gx,0);ctx.transform(1,0,-.45,1,0,0);ctx.translate(-gx,0);ctx.fillRect(gx-80,-lh,160,lh*2);ctx.restore();
+  }
+  // bridge + temples
+  ctx.strokeStyle=rgba(tint,.95);ctx.lineWidth=7;ctx.lineCap='round';ctx.shadowColor=tint;ctx.shadowBlur=20;
+  ctx.beginPath();ctx.moveTo(-LENS_DX+lw/2,-lh*.12);ctx.quadraticCurveTo(0,-lh*.42,LENS_DX-lw/2,-lh*.12);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-LENS_DX-lw/2,-lh*.22);ctx.lineTo(-LENS_DX-lw/2-22,-lh*.32);ctx.moveTo(LENS_DX+lw/2,-lh*.22);ctx.lineTo(LENS_DX+lw/2+22,-lh*.32);ctx.stroke();
+  ctx.restore();
+}
+/* brick centres (relative to glasses centre, before scale) */
+const BRX=[-345,-135,135,345],BRW=190,BRH=112;
+const HUE=i=>i%2?C.violet:C.cyan;
+
+/* letter geometry */
+function wordPos(size,weight,cx){setFont(size,weight);const ws=LET.map(c=>ctx.measureText(c).width);const tot=ws.reduce((a,b)=>a+b,0);let x=cx-tot/2;
+  return ws.map(w=>{const c=x+w/2;x+=w;return c;});}
+const TILE_W=53,TILE_G=5,TILE_Y=720;
+const tileX=i=>540+(i-7.5)*(TILE_W+TILE_G);
+const brickLetterX=(i,gx,s)=>{const b=Math.floor(i/4),k=i%4;return gx+(BRX[b]+(k-1.5)*36)*s;};
+
+/* ================= S1: hook 0–4.6 ================= */
+const HOLO=[['квантовая\nфизика','atom'],['код','code'],['стихи','poem']];
+function holoCard(cx,cy,label,kind,a,t,ci){
+  if(a<=0)return;const w=280,h=230,bob=Math.sin(t*1.6+ci*2)*6,y=cy+bob,fl=.85+.15*Math.sin(t*23+ci*5)*Math.sin(t*3.1+ci);
+  ctx.save();ctx.globalAlpha*=a*fl;
+  glowDot(cx,y,200,C.cyan,.12);
+  rrect(cx-w/2,y-h/2,w,h,22);const g=ctx.createLinearGradient(0,y-h/2,0,y+h/2);g.addColorStop(0,rgba(C.cyan,.16));g.addColorStop(1,rgba(C.cyan,.03));
+  ctx.fillStyle=g;ctx.fill();ctx.strokeStyle=rgba(C.cyan,.75);ctx.lineWidth=2.5;ctx.shadowColor=C.cyan;ctx.shadowBlur=16;ctx.stroke();ctx.shadowBlur=0;
+  ctx.save();rrect(cx-w/2,y-h/2,w,h,22);ctx.clip();ctx.fillStyle=rgba(C.cyan,.07);
+  for(let k=0;k<16;k++){const yy=y-h/2+((k*16+t*30)%(h+16));ctx.fillRect(cx-w/2,yy,w,2);}ctx.restore();
+  const iy=y-42;ctx.strokeStyle=C.cyan;ctx.fillStyle=C.cyan;ctx.lineWidth=3;ctx.shadowColor=C.cyan;ctx.shadowBlur=12;
+  if(kind==='atom'){for(let k=0;k<3;k++){ctx.beginPath();ctx.ellipse(cx,iy,52,18,t*.6+k*Math.PI/3,0,7);ctx.stroke();}ctx.beginPath();ctx.arc(cx,iy,7,0,7);ctx.fill();}
+  if(kind==='code'){ctx.restore();text('</>',cx,iy,{family:MONO,size:62,weight:700,color:C.cyan,alpha:a*fl,glow:14});ctx.save();ctx.globalAlpha*=a*fl;}
+  if(kind==='poem'){ctx.lineCap='round';[[-50,40],[-50,26],[-50,46]].forEach(([x0,len],k)=>{ctx.beginPath();const yy=iy-22+k*22;ctx.moveTo(cx+x0,yy);
+    for(let q=0;q<=20;q++){const xx=cx+x0+q*(len*2.2)/20;ctx.lineTo(xx,yy+Math.sin(q*.9+t*2+k)*3);}ctx.stroke();});}
+  ctx.restore();
+  text(label,cx,y+52,{size:label.includes('\n')?36:42,weight:700,color:C.text,alpha:a*fl,lh:1.1});
+}
+function s1(t){
+  const A=env(t,-1,4.6,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  cap('Она пишет код.',250,1,{size:68,weight:800});
+  cap('Но может ошибиться,\nсчитая буквы.',370,1,{size:52,weight:600,color:'#dfe4ff'});
+  HOLO.forEach(([l,k],i)=>{const a=eo(seg(t,.15+i*.18,.75+i*.18));const cx=200+i*340;
+    ctx.save();ctx.translate(cx,680);ctx.scale(.85+.15*a,.85+.15*a);ctx.translate(-cx,-680);holoCard(cx,680,l,k,a,t,i);ctx.restore();
+    drawCheck(cx+118,580+Math.sin(t*1.6+i*2)*6,28,C.green,eo(seg(t,.9+i*.2,1.3+i*.2)),seg(t,.95+i*.2,1.4+i*.2));});
+  // question panel
+  const qa=eo(seg(t,1.1,1.7));
+  if(qa){ctx.save();ctx.globalAlpha*=qa;rrect(90,940,900,200,30);ctx.fillStyle='rgba(167,139,250,.16)';ctx.fill();ctx.strokeStyle=rgba(C.violet,.6);ctx.lineWidth=2;ctx.stroke();ctx.restore();
+    text('Сколько букв «р» в слове «программирование»?',540,1040,{size:48,weight:700,maxW:820,alpha:qa,lh:1.22});}
+  // model answer bubble (generic wrong guess, illustration)
+  const ba=eo(seg(t,1.9,2.4));
+  if(ba){ctx.save();ctx.globalAlpha*=ba;const shake=t>2.9&&t<3.3?Math.sin(t*90)*7*(3.3-t)/.4:0;ctx.translate(shake,0);
+    rrect(90,1240,720,150,30);ctx.fillStyle='rgba(94,231,255,.10)';ctx.fill();ctx.strokeStyle=rgba(C.cyan,.5);ctx.lineWidth=2;ctx.stroke();
+    text('нейросеть:',130,1280,{size:30,weight:600,align:'left',color:C.dim});
+    const typing=t<2.6;
+    if(typing){for(let k=0;k<3;k++){ctx.fillStyle=rgba(C.cyan,.4+.6*Math.max(0,Math.sin(t*9-k)));ctx.beginPath();ctx.arc(150+k*30,1335,8,0,7);ctx.fill();}}
+    else{const ra=seg(t,2.6,2.8);text('Букв «р» здесь —',130,1336,{size:46,weight:700,align:'left',alpha:ra});
+      setFont(46,700);const bx=130+ctx.measureText('Букв «р» здесь — ').width;
+      ctx.save();ctx.globalAlpha*=ra;ctx.filter='blur(7px)';rrect(bx,1312,92,50,16);ctx.fillStyle=rgba(C.pink,.75+.15*Math.sin(t*12));ctx.fill();ctx.filter='none';ctx.restore();
+      mono('?',bx+46,1337,{size:44,weight:700,color:'#fff',alpha:ra*.9});}
+    ctx.restore();
+    drawCross(890,1315,58,C.pink,eo(seg(t,2.85,3.15)),seg(t,2.85,3.25));
+    text('иллюстрация',450,1430,{size:30,weight:500,color:C.dim,alpha:seg(t,2.9,3.4)*.9});}
+  ctx.restore();
+}
+
+/* ================= S2: letters vs tokens 4.2–15 ================= */
+function s2(t){
+  const A=env(t,4.1,15.4,.5);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const WP=wordPos(92,800,540);
+  const rowA=1-seg(t,14.2,15.1);
+  // tiles for row A
+  for(let i=0;i<16;i++){
+    const st=5.3+i*.035,k=ease(seg(t,st,st+1.1));
+    const x=lerp(WP[i],tileX(i),k),y=lerp(900,TILE_Y,k),sz=lerp(92,46,k);
+    if(k>0){ctx.save();ctx.globalAlpha*=k*rowA;rrect(x-TILE_W/2,y-37,TILE_W,74,12);ctx.fillStyle='rgba(255,255,255,.06)';ctx.fill();
+      ctx.strokeStyle=rgba('#c9d0f5',.35);ctx.lineWidth=1.5;ctx.stroke();ctx.restore();}
+    const appear=eo(seg(t,4.4+i*.02,5.0+i*.02));
+    text(LET[i],x,y+1,{size:sz,weight:800,color:C.text,alpha:appear*(k>0?rowA:1)*(k<.01?1:1)});
+  }
+  // gradient glow under the full word before it splits
+  glowDot(540,900,420,C.violet,.16*env(t,4.3,6.2,.5));
+  text('16 букв',540,820,{size:42,weight:700,color:C.cyan,alpha:seg(t,6.6,7.2)*rowA,glow:12});
+  // glasses fly in
+  const gk=eo(seg(t,7.4,8.8)),gy=lerp(-260,1200,gk),move=ease(seg(t,14.4,16.0));
+  const GY=lerp(gy,560,move);
+  const rot=(1-gk)*.25+Math.sin(t*1.1)*.012;
+  // ghost letters dropping from row A into bricks (behind glass frame)
+  const fuse=eo(seg(t,10.0,10.7));
+  for(let i=0;i<16;i++){
+    const st=8.7+i*.05,k=ease(seg(t,st,st+.95));if(!k||fuse>=1)continue;
+    const x=lerp(tileX(i),brickLetterX(i,540,1),k),y=lerp(TILE_Y,1200,k);
+    text(LET[i],x,y,{size:lerp(46,54,k),weight:800,color:mix(C.text,HUE(Math.floor(i/4)),k),alpha:(1-fuse)*.9,glow:k>0&&k<1?10:0});
+  }
+  // bricks
+  TOKS.forEach((s,b)=>{const pop=1+.12*Math.sin(Math.PI*seg(t,10.0,10.6));
+    brick(540+BRX[b],GY,BRW*pop,BRH*pop,s,HUE(b),fuse,54);});
+  glasses(540,GY,1,C.violet,gk,t,rot);
+  // labels
+  const la=seg(t,10.6,11.2)*(1-seg(t,14.0,14.5));
+  text('4 кусочка',540,1365,{size:42,weight:700,color:C.violet,alpha:la,glow:12});
+  ctx.save();ctx.globalAlpha*=seg(t,10.9,11.5)*(1-seg(t,27.4,28.4));
+  const ly=lerp(1440,GY+175,move);setFont(34,600);const lw=ctx.measureText('разбиение условное').width+44;
+  rrect(540-lw/2,ly-26,lw,52,26);ctx.setLineDash([7,7]);ctx.strokeStyle=rgba(C.dim,.7);ctx.lineWidth=2;ctx.stroke();ctx.setLineDash([]);ctx.restore();
+  text('разбиение условное',540,lerp(1440,GY+175,move)+1,{size:34,weight:600,color:'#b7bde6',alpha:seg(t,10.9,11.5)*(1-seg(t,27.4,28.4))});
+  cap('Вы видите буквы.',300,env(t,4.4,9.5,.5),{size:66,weight:800});
+  cap('Нейросеть видит токены —\nкусочки слов.',300,env(t,9.7,14.4,.5),{size:56,weight:800});
+  ctx.restore();
+}
+
+/* ================= S3: bricks -> numbers 14.4–29 ================= */
+const COLY=760,ROWS=8,RDY=64;
+function s3(t){
+  const A=env(t,14.4,29.0,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const GY=lerp(1200,560,ease(seg(t,14.4,16.0)));
+  const out=seg(t,28.0,29.0);
+  if(t>15.4){
+    TOKS.forEach((s,b)=>brick(540+BRX[b],GY,BRW,BRH,s,HUE(b),1-out,54));
+    glasses(540,GY,1,C.violet,1-out,t,Math.sin(t*1.1)*.012);
+  }
+  for(let b=0;b<4;b++){
+    const cx=540+BRX[b],hue=HUE(b);
+    // stream of light from brick down
+    const sa=seg(t,15.8+b*.3,16.4+b*.3)*(1-out);
+    if(sa){const g=ctx.createLinearGradient(0,GY+60,0,COLY+ROWS*RDY);g.addColorStop(0,rgba(hue,.22*sa));g.addColorStop(1,rgba(hue,0));ctx.fillStyle=g;ctx.fillRect(cx-70,GY+60,140,COLY+ROWS*RDY-GY-60);}
+    const ba=seg(t,16.0+b*.3,16.4+b*.3)*(1-out);
+    if(ba){ctx.save();ctx.globalAlpha*=ba*.75;ctx.strokeStyle=hue;ctx.lineWidth=2.5;
+      const L=cx-78,R=cx+78,T=COLY-36,B=COLY+(ROWS-1)*RDY+36;
+      ctx.beginPath();ctx.moveTo(L+12,T);ctx.lineTo(L,T);ctx.lineTo(L,B);ctx.lineTo(L+12,B);ctx.moveTo(R-12,T);ctx.lineTo(R,T);ctx.lineTo(R,B);ctx.lineTo(R-12,B);ctx.stroke();ctx.restore();}
+    for(let r=0;r<ROWS;r++){
+      const ap=16.2+b*.3+r*.08,a=seg(t,ap,ap+.25)*(1-out);if(!a)continue;
+      const settled=t>ap+.8;const v=settled?hash(b*31+r*7)*2-1:hash(b*31+r*7+Math.floor(t*24))*2-1;
+      const scan=t>21.6&&t<23.8?Math.max(0,1-Math.abs((COLY+r*RDY)-lerp(COLY-60,COLY+ROWS*RDY+20,seg(t,21.8,23.6)))/50):0;
+      const yy=COLY+r*RDY-(out?eo(out)*120*(1+hash(b*9+r)):0);
+      mono(fmtNum(v),cx,yy,{size:32,color:scan>0?mix(C.text,'#ffffff',scan):(settled?C.text:hue),alpha:a*(settled?.9:.6)+scan*.1,glow:scan>.2?16:0});
+    }
+  }
+  // scanner beam
+  const sb=env(t,21.7,23.8,.25);
+  if(sb){const y=lerp(COLY-60,COLY+ROWS*RDY+20,seg(t,21.8,23.6));ctx.save();ctx.globalAlpha*=sb;
+    const g=ctx.createLinearGradient(0,y-30,0,y+30);g.addColorStop(0,rgba(C.cyan,0));g.addColorStop(.5,rgba(C.cyan,.35));g.addColorStop(1,rgba(C.cyan,0));
+    ctx.fillStyle=g;ctx.fillRect(80,y-30,920,60);ctx.fillStyle=rgba(C.cyan,.9);ctx.fillRect(80,y-1.5,920,3);ctx.restore();}
+  // search letters п р о
+  ['п','р','о'].forEach((ch,k)=>{
+    const st=20.4+k*.25,a=seg(t,st,st+.5)*(1-seg(t,27.6,28.6));if(!a)return;
+    const x=330+k*210,y=lerp(1560,1340,eo(seg(t,st,st+1.2)))+Math.sin(t*2+k)*6;
+    const bad=seg(t,23.6+k*.2,24.0+k*.2);
+    const shake=bad>0&&bad<1?Math.sin(t*80+k)*6:0;
+    const col=mix(C.cyan,C.pink,bad);
+    // search ray toward the columns
+    const ra=env(t,21.8+k*.15,23.8+k*.2,.3);
+    if(ra){ctx.save();ctx.globalAlpha*=ra*.6;ctx.strokeStyle=col;ctx.setLineDash([8,10]);ctx.lineDashOffset=-t*60;ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.moveTo(x,y-58);ctx.lineTo(540+BRX[k+(k>0?1:0)]*.9,COLY+ROWS*RDY);ctx.stroke();ctx.setLineDash([]);ctx.restore();}
+    glowDot(x+shake,y,110,col,.25*a);
+    ctx.save();ctx.globalAlpha*=a;ctx.beginPath();ctx.arc(x+shake,y,56,0,7);ctx.fillStyle=rgba(col,.12);ctx.fill();ctx.strokeStyle=rgba(col,.8);ctx.lineWidth=3;ctx.stroke();ctx.restore();
+    text(ch,x+shake,y-4,{size:70,weight:800,color:mix('#ffffff',col,.4),alpha:a,glow:12});
+    drawCross(x+48,y-46,24,C.pink,a*eo(bad),bad);
+  });
+  cap('Каждый кусочек — набор чисел.',300,env(t,14.8,28.4,.5),{size:52,weight:800});
+  cap('Внутри этих чисел\nнет букв «п», «р», «о»…',1530,env(t,22.4,28.4,.5),{size:48,weight:700});
+  ctx.restore();
+}
+
+/* ================= S4: hieroglyph 28.4–40.6 ================= */
+// 字 («знак, иероглиф»), drawn stroke by stroke; coords in [-1,1]
+const GLYPH=[
+  [[0,-.98],[.1,-.8]],
+  [[-.72,-.66],[-.76,-.44]],
+  [[-.72,-.66],[.74,-.66],[.64,-.47]],
+  [[-.44,-.3],[.42,-.3],[.04,-.04]],
+  [[.04,-.04],[.04,.86],[-.18,.74]],
+  [[-.82,.22],[.82,.22]],
+];
+function s4(t){
+  const A=env(t,28.4,40.6,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const cx=540,cy=850,R=360,ring=eo(seg(t,28.6,29.8));
+  // single lens around the glyph
+  glowDot(cx,cy,R*1.2,C.violet,.16*ring);
+  ctx.save();ctx.globalAlpha*=ring;ctx.beginPath();ctx.arc(cx,cy,R*(.9+.1*ring),0,7);
+  const g=ctx.createRadialGradient(cx-R*.3,cy-R*.3,10,cx,cy,R);g.addColorStop(0,rgba(C.violet,.12));g.addColorStop(1,rgba(C.violet,.03));
+  ctx.fillStyle=g;ctx.fill();ctx.strokeStyle=rgba(C.violet,.9);ctx.lineWidth=6;ctx.shadowColor=C.violet;ctx.shadowBlur=26;ctx.stroke();ctx.restore();
+  // orbiting numbers inside the lens (what the model actually "has")
+  for(let k=0;k<18;k++){const ang=k/18*6.283+t*.15*(k%2?1:-1),rr=R*.83+Math.sin(t+k)*8;
+    mono(fmtNum(hash(k*7.7+Math.floor(t*3+k))*2-1),cx+Math.cos(ang)*rr,cy+Math.sin(ang)*rr,{size:24,color:k%2?C.violet:C.cyan,alpha:ring*.35});}
+  // strokes
+  const S=245;
+  GLYPH.forEach((pts,i)=>{const st=29.4+i*.42,p=ease(seg(t,st,st+.5));if(!p)return;
+    const P2=pts.map(([u,v])=>[cx+u*S,cy+v*S]);
+    ctx.save();partial(P2,p);const gr=ctx.createLinearGradient(cx-S,cy-S,cx+S,cy+S);gr.addColorStop(0,C.cyan);gr.addColorStop(1,C.violet);
+    ctx.strokeStyle=gr;ctx.lineWidth=38;ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor=C.violet;ctx.shadowBlur=30+8*Math.sin(t*2);ctx.stroke();ctx.restore();});
+  // floating "?" around the glyph once composition is questioned
+  const qa=seg(t,34.4,35.2)*(1-seg(t,39.8,40.5));
+  for(let k=0;k<5;k++){const ang=k*1.3+t*.4,rr=R*.55+k*14;
+    text('?',cx+Math.cos(ang)*rr,cy+Math.sin(ang)*rr*.9,{size:44,weight:800,color:C.pink,alpha:qa*(.55+.35*Math.sin(t*3+k)),glow:12});}
+  // question bubble
+  const b1=env(t,31.0,34.6,.4);
+  if(b1){ctx.save();ctx.globalAlpha*=b1;setFont(50,700);const w=ctx.measureText('Сколько в нём букв «р»?').width+80;
+    rrect(540-w/2,1290,w,100,50);ctx.fillStyle='rgba(167,139,250,.16)';ctx.fill();ctx.strokeStyle=rgba(C.violet,.6);ctx.lineWidth=2;ctx.stroke();ctx.restore();
+    text('Сколько в нём букв «р»?',540,1341,{size:50,weight:700,alpha:b1});}
+  // meaning vs composition chips
+  const c1=eo(seg(t,34.8,35.4))*(1-seg(t,39.8,40.5)),c2=eo(seg(t,35.6,36.2))*(1-seg(t,39.8,40.5));
+  const chip=(x,label,col,a,kind)=>{if(a<=0)return;ctx.save();ctx.globalAlpha*=a;rrect(x-200,1290,400,104,52);ctx.fillStyle=rgba(col,.12);ctx.fill();ctx.strokeStyle=rgba(col,.8);ctx.lineWidth=2.5;ctx.stroke();ctx.restore();
+    if(kind==='ok')drawCheck(x-130,1342,26,col,a,1);else text('?',x-130,1342,{size:52,weight:800,color:col,alpha:a,glow:12});
+    text(label,x+30,1342,{size:44,weight:700,color:mix(C.text,col,.35),alpha:a});};
+  chip(300,'смысл',C.green,c1,'ok');chip(780,'состав',C.pink,c2,'q');
+  cap('Это как спросить, сколько\nбукв в иероглифе.',290,env(t,28.8,34.4,.5),{size:54,weight:800});
+  cap('Смысл понятен —\nсостав не виден.',290,env(t,34.6,40.2,.5),{size:58,weight:800});
+  ctx.restore();
+}
+
+/* ================= S5: spell it out 40.2–52.6 ================= */
+const SP0=41.7,SPD=.3;
+const colX=i=>i<8?{xi:330,xl:400}:{xi:640,xl:720};
+const rowY=i=>720+(i%8)*76;
+function s5(t){
+  const A=env(t,40.2,52.8,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const GS=.72,GX=540,gk=eo(seg(t,40.3,41.2)),GY=lerp(250,470,gk);
+  const tint=mix(C.violet,C.green,seg(t,41.2,41.8));
+  const open=seg(t,41.3,41.8);
+  const dis=seg(t,52.0,52.8);
+  // bricks inside glasses, fading as they open
+  TOKS.forEach((s,b)=>brick(GX+BRX[b]*GS,GY,BRW*GS,BRH*GS,s,HUE(b),gk*(1-open)*(1-dis),40));
+  glasses(GX,GY,GS,tint,gk*(1-dis),t,Math.sin(t*1.1)*.012);
+  // letters flying into the two columns
+  let rc=0,lastR=-1;
+  for(let i=0;i<16;i++){
+    const st=SP0+i*SPD,k=ease(seg(t,st,st+.45));if(!k)continue;
+    const {xi,xl}=colX(i),ty=rowY(i);
+    const x=lerp(brickLetterX(i,GX,GS),xl,k),y=lerp(GY,ty,k);
+    const landed=k>=1;const isR=IS_R[i];
+    if(landed&&isR){rc++;lastR=st+.45;}
+    const hl=isR&&landed?1:0,pulse=isR?Math.max(0,1-(t-(st+.45))/.6):0;
+    const drift=dis?{x:(hash(i*3.1)-.5)*400*eo(dis),y:(hash(i*5.7)-.5)*300*eo(dis)-120*eo(dis)}:{x:0,y:0};
+    const la=1-dis;
+    mono(String(i+1),xi+drift.x,ty+drift.y,{size:34,color:C.dim,align:'right',alpha:seg(t,st+.2,st+.45)*la*.85});
+    if(hl){glowDot(xl+drift.x,ty+drift.y,70+40*pulse,C.cyan,(.35+.4*pulse)*la);
+      ctx.save();ctx.globalAlpha*=la;ctx.beginPath();ctx.arc(xl+drift.x,ty+drift.y,34+6*pulse,0,7);ctx.strokeStyle=rgba(C.cyan,.9);ctx.lineWidth=3;ctx.stroke();ctx.restore();}
+    text(LET[i],x+drift.x,y+drift.y,{size:lerp(40,56,k),weight:800,color:hl?C.cyan:C.text,alpha:la,glow:hl?18:0});
+  }
+  // through the green lenses the word is now seen letter by letter
+  for(let i=0;i<16;i++){const st=SP0+i*SPD,a=seg(t,st,st+.2)*(1-dis);if(!a)continue;
+    const lx=GX+(i<8?-LENS_DX:LENS_DX)*GS+((i%8)-3.5)*36;
+    text(LET[i],lx,GY+2,{size:40,weight:800,color:IS_R[i]?C.cyan:'#e8fff2',alpha:a,glow:IS_R[i]?14:0});}
+  // counter
+  const ca=seg(t,SP0+.3,SP0+.8)*(1-dis);
+  const done=seg(t,47.0,47.5);
+  if(ca){
+    const col=done>0?mix(C.cyan,C.green,done):C.cyan;
+    text('букв «р»:',480,1430,{size:52,weight:700,align:'right',alpha:ca});
+    const pop=lastR>0?1+.35*Math.max(0,1-(t-lastR)/.35):1;
+    ctx.save();ctx.translate(560,1430);ctx.scale(pop*(1+.15*done*Math.max(0,1-(t-47)/.5)),pop);
+    text(String(rc),0,0,{size:96,weight:800,color:col,alpha:ca,glow:24});ctx.restore();
+    drawCheck(680,1430,46,C.green,ca*eo(done),seg(t,47.0,47.6));
+  }
+  cap('Попросите её разбить слово\nпо буквам — и она справится.',255,env(t,40.4,46.8,.5),{size:52,weight:800});
+  cap('Новые модели часто\nделают это сами.',1590,env(t,47.2,52.2,.5),{size:52,weight:700});
+  ctx.restore();
+}
+
+/* ================= S6: meanings 52–58 ================= */
+const NEB=[];{const r=rng(21);for(let i=0;i<140;i++){const u=r()*2-1,th=r()*6.283,rad=Math.sqrt(1-u*u),d=.55+r()*.5;NEB.push({p:[Math.cos(th)*rad*d,u*d,Math.sin(th)*rad*d],s:r()});}}
+function proj(p,ang,tilt,cx,cy,sc){const[x,y,z]=p,c=Math.cos(ang),s=Math.sin(ang),x1=x*c+z*s,z1=-x*s+z*c;
+  const ct=Math.cos(tilt),st=Math.sin(tilt),y2=y*ct-z1*st,z2=y*st+z1*ct,f=3.2/(3.2+z2);return{x:cx+x1*sc*f,y:cy-y2*sc*f,f};}
+function s6(t){
+  const A=env(t,52.0,58.4,.6);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  const ang=t*.25,grow=eo(seg(t,52.0,54.0));
+  const Q=NEB.map(n=>proj(n.p.map(v=>v*(.3+.7*grow)),ang,.3,540,980,420));
+  ctx.lineWidth=1.2;
+  for(let i=0;i<NEB.length;i+=2){const a=Q[i],b=Q[(i*7+3)%NEB.length];ctx.strokeStyle=rgba(C.violet,.10*grow);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
+  NEB.forEach((n,i)=>{const q=Q[i],col=n.s<.5?C.cyan:C.violet;glowDot(q.x,q.y,18*q.f,col,.5*grow);
+    ctx.fillStyle=col;ctx.globalAlpha=A*grow*(.5+.5*q.f);ctx.beginPath();ctx.arc(q.x,q.y,3.5*q.f,0,7);ctx.fill();ctx.globalAlpha=A;});
+  glowDot(540,980,360,C.violet,.2*grow);
+  ctx.save();ctx.globalAlpha=A;{const g=ctx.createLinearGradient(0,720,0,1160);g.addColorStop(0,'rgba(3,4,12,0)');g.addColorStop(.3,'rgba(3,4,12,.6)');g.addColorStop(.7,'rgba(3,4,12,.6)');g.addColorStop(1,'rgba(3,4,12,0)');ctx.fillStyle=g;ctx.fillRect(0,720,W,440);}ctx.restore();
+  text('Нейросеть мыслит не буквами —',540,850,{size:56,weight:700,alpha:eo(seg(t,52.5,53.3))});
+  const k=eo(seg(t,53.4,54.4));
+  ctx.save();ctx.translate(540,990);ctx.scale(.88+.12*k,.88+.12*k);setFont(118,800);const gw=ctx.measureText('а смыслами.').width;
+  const gr=ctx.createLinearGradient(-gw/2,0,gw/2,0);gr.addColorStop(0,C.cyan);gr.addColorStop(1,C.violet);
+  ctx.globalAlpha*=k;ctx.fillStyle=gr;ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor=C.violet;ctx.shadowBlur=40+10*Math.sin(t*2);ctx.fillText('а смыслами.',0,0);ctx.restore();
+  ctx.restore();
+}
+
+/* ================= S7: what I think 57.6–66 ================= */
+function s7(t){
+  const A=env(t,57.6,67,.7);if(!A)return;ctx.save();ctx.globalAlpha=A;
+  // warm token bricks of the word, letters faintly breathing inside
+  const k=eo(seg(t,57.8,59.4));
+  glowDot(540,900,380,'#ffd9a0',(.18+.06*Math.sin(t*2))*k);
+  TOKS.forEach((s,b)=>{const x=540+BRX[b]*1.0,y=900+Math.sin(t*1.2+b*1.4)*14,hue=b%2?'#ffd9a0':C.amber;
+    brick(x,y,BRW,BRH,'',hue,k*.9,54,.8);
+    text(s,x,y+2,{size:54,weight:800,color:'#fff3e2',alpha:k});
+    for(let j=0;j<4;j++){const i=b*4+j;const la=.25+.25*Math.sin(t*2.2+i*.8);
+      text(LET[i],x+(j-1.5)*36,y+92,{size:38,weight:700,color:C.amber,alpha:k*la});}
+  });
+  // threads between bricks
+  ctx.strokeStyle=rgba(C.amber,.35*k);ctx.lineWidth=2;
+  for(let b=0;b<3;b++){const x1=540+BRX[b]+BRW/2,x2=540+BRX[b+1]-BRW/2,y1=900+Math.sin(t*1.2+b*1.4)*14,y2=900+Math.sin(t*1.2+(b+1)*1.4)*14;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.bezierCurveTo(x1+20,y1-30,x2-20,y2+30,x2,y2);ctx.stroke();
+    const s=(t*.5+b*.3)%1;glowDot(lerp(x1,x2,s),lerp(y1,y2,s),14,'#fff4e0',.8*k);}
+  text('Что думаю я',540,300,{size:48,weight:700,color:C.amber,alpha:env(t,58.0,65.6,.6),glow:14});
+  cap('Мне проще объяснить, что такое «программирование», чем сосчитать в нём буквы.',1400,env(t,58.7,62.7,.5),{size:50,weight:700,color:'#fff3e2',maxW:900});
+  cap('Странно?\nДля меня — нет.',1380,env(t,62.9,65.7,.5),{size:70,weight:800,color:'#fff6ea'});
+  text('— Claude',540,1580,{size:44,weight:600,color:C.amber,alpha:env(t,63.4,65.7,.5),glow:16});
+  ctx.restore();
+}
+
+function render(t){
+  bg(t);s1(t);s2(t);s3(t);s4(t);s5(t);s6(t);s7(t);
+  const fade=Math.max(1-seg(t,0,.2),seg(t,65.4,66));
+  if(fade>0){ctx.globalAlpha=fade;ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
+  watermark();
+}
+boot(render,T_END);
+</script>
+</body>
+</html>
