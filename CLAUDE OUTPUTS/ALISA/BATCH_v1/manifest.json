@@ -1,0 +1,56 @@
+[
+  {
+    "order": 1,
+    "id": "alisa_01_fridge",
+    "title": "Сфоткай холодильник — получишь ужин",
+    "video_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_01_fridge.mp4",
+    "cover_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_01_fridge_cover.png",
+    "instagram_caption": "Сфоткай холодильник — получишь ужин\n\nВечер, сил нет, а в холодильнике «всего понемногу». Не надо листать рецепты: сфотографируй полки и отправь фото ИИ (ChatGPT или любой другой чат-бот с фото).\n\nОн сам распознает продукты и предложит 3 блюда, которые реально успеть за 20 минут. Понравилось одно — попроси рецепт по шагам.\n\nПромпт: «Вот фото холодильника. Предложи 3 блюда на 20 минут только из этих продуктов. Шаги — коротко.»\n\nА что сегодня у вас на ужин? Напишите в комментариях 👇\n\n#нейросеть #ии #chatgpt #лайфхаки #чтоприготовить",
+    "duration_sec": 33
+  },
+  {
+    "order": 2,
+    "id": "alisa_02_plant",
+    "title": "Цветок вянет? Покажи его ИИ",
+    "video_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_02_plant.mp4",
+    "cover_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_02_plant_cover.png",
+    "instagram_caption": "Цветок вянет? Покажи его ИИ\n\nЛистья желтеют, кончики сохнут — и непонятно, что не так: свет, полив или батарея рядом. Сфотографируй лист крупно и отправь фото ИИ.\n\nОн подскажет вероятную причину и даст понятный план ухода. Если через пару недель лучше не стало — покажите растение в цветочном магазине.\n\nПромпт: «Вот фото листа. Что с растением и как за ним ухаживать ближайшие 2 недели? Объясни просто.»\n\nКакой цветок у вас самый капризный? 🌿\n\n#нейросеть #ии #chatgpt #лайфхаки #комнатныерастения",
+    "duration_sec": 33
+  },
+  {
+    "order": 3,
+    "id": "alisa_03_resume",
+    "title": "Резюме, на которое отвечают работодатели",
+    "video_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_03_resume.mp4",
+    "cover_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_03_resume_cover.png",
+    "instagram_caption": "Резюме, на которое отвечают работодатели\n\nОдно резюме на все вакансии — частая причина тишины в ответ. Работодатель (и его фильтры) ищут в резюме свои слова из вакансии.\n\nОтправь ИИ своё резюме и текст вакансии — он перестроит опыт под неё. Важно: попроси ничего не выдумывать и перечитай результат перед отправкой.\n\nПромпт: «Вот моё резюме и текст вакансии. Перепиши резюме под вакансию, используй её ключевые слова. Ничего не выдумывай.»\n\nСколько откликов вы отправили, прежде чем позвали на собеседование?\n\n#нейросеть #ии #chatgpt #лайфхаки #резюме",
+    "duration_sec": 33
+  },
+  {
+    "order": 4,
+    "id": "alisa_04_menu",
+    "title": "Меню на неделю за одно сообщение",
+    "video_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_04_menu.mp4",
+    "cover_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_04_menu_cover.png",
+    "instagram_caption": "Меню на неделю за одно сообщение\n\n«Что приготовить?» каждый день отнимает больше сил, чем сама готовка. Напиши ИИ, сколько вас в семье, кто что не ест и какой бюджет.\n\nВ ответ — меню на 7 дней и список покупок, разложенный по отделам магазина. Цены ИИ знает примерно, так что сверяйте с чеком.\n\nПромпт: «Нас [сколько], бюджет [сумма] на неделю. Составь меню на 7 дней и список покупок по отделам магазина.»\n\nКакое блюдо у вас в семье готовят чаще всего?\n\n#нейросеть #ии #chatgpt #лайфхаки #меню",
+    "duration_sec": 33
+  },
+  {
+    "order": 5,
+    "id": "alisa_05_document",
+    "title": "Непонятный документ? Сфотографируй его",
+    "video_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_05_document.mp4",
+    "cover_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_05_document_cover.png",
+    "instagram_caption": "Непонятный документ? Сфотографируй его\n\nДоговор, квитанция, письмо из управляющей компании — читать сложно, а подписать надо. Сфотографируй страницы и попроси ИИ объяснить простыми словами.\n\nОн выделит главное: сроки, платежи, штрафы и мелкий шрифт. Это не замена юристу: важные и спорные пункты проверьте у специалиста.\n\nПромпт: «Объясни простыми словами этот документ: что в нём главное, какие сроки и платежи и на что обратить внимание.»\n\nНаходили подвох в договоре уже после подписания?\n\n#нейросеть #ии #chatgpt #лайфхаки #экономия",
+    "duration_sec": 33
+  },
+  {
+    "order": 6,
+    "id": "alisa_06_stain",
+    "title": "Пятно на одежде? Спроси ИИ",
+    "video_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_06_stain.mp4",
+    "cover_url": "https://raw.githubusercontent.com/t4993408232-collab/analizator-bot/claude/ai-math-video/CLAUDE%20OUTPUTS/ALISA/BATCH_v1/alisa_06_stain_cover.png",
+    "instagram_caption": "Пятно на одежде? Спроси ИИ\n\nКофе, жир, трава — у каждого пятна свой способ, а одна ошибка (например, горячая вода) делает его вечным. Сфотографируй пятно и ярлык одежды и отправь ИИ.\n\nОн подскажет, что сделать сразу и чего НЕ делать с этой тканью. Любое средство сначала проверьте на незаметном участке.\n\nПромпт: «Пятно от [чего] на [ткань, цвет]. Как его вывести дома и чего точно НЕ делать? Учти ярлык: [что на ярлыке].»\n\nКакое пятно вы так и не смогли вывести?\n\n#нейросеть #ии #chatgpt #полезныесоветы #стирка",
+    "duration_sec": 33
+  }
+]
