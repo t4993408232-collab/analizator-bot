@@ -20,6 +20,6 @@ vec3 scene(vec2 uv, vec2 p){
   if(h12(floor(q*30.)+id)>.985) col*=1.6+uBeat;                       // seed bubbles flash on the beat
   float l=smoothstep(.035,.012,lead);                                 // lead came + soft shadow
   col*=1.-l*.96; col*=1.-.35*smoothstep(.09,.03,lead);
-  col*=1.-sh*.9*step(.5, h12(vec2(id,11.)))*smoothstep(.6,1.,sh);    // panes leave the frame
+  float th=.15+.7*h12(vec2(id,11.)); col*=1.-smoothstep(th, th+.12, sh);    // pane by pane the window empties into the dark
   return col;
 }`;
