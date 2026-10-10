@@ -102,7 +102,7 @@ function outro(t) {
   const L = TYPED[1]; if (t < L.start) return;
   const s = typedPart(L, t), done = t >= L.end + .15, sc = done ? 1 + .12 * Math.exp(-(t - L.end - .15) * 8) : 1;
   txt(s + (blink(t) || !done ? '▍' : ' '), W / 2, H * .43, { px: 104, w: 700, color: INK, glow: done ? 60 : 20, scale: sc, a: 1 - ramp(t, DURATION - .8, DURATION) });
-  txt('видео = код', W / 2, H * .43 + 110 * K, { px: 54, w: 700, color: ACCENT, glow: 20, a: ramp(t, L.end + .4, L.end + .8) * (1 - ramp(t, DURATION - .8, DURATION)) });
+  txt('видео = код', W / 2, H * .43 - 105 * K, { px: 54, w: 700, color: ACCENT, glow: 20, a: ramp(t, L.end + .4, L.end + .8) * (1 - ramp(t, DURATION - .8, DURATION)) });
 }
 // render counter: the only "UI" — proves each frame is computed
 function counter(t) {
