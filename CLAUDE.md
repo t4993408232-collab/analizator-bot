@@ -43,3 +43,11 @@ Telegram-проект из трёх частей в одном FastAPI-прил�
 
 `.github/workflows/ci.yml` — компиляция + офлайн-тесты (`tests/test_sanity.py`,
 `tests/test_tender.py`) на каждый push/PR.
+
+## Скиллы проекта (`.claude/skills/`)
+
+- `marketing-council` (coreyhaines31/marketingskills, MIT) — симуляция совета
+  из 12 маркетологов для стратегических решений.
+- `task-observer` (rebelytics/one-skill-to-rule-them-all, CC BY 4.0) — наблюдает
+  за работой скиллов и предлагает улучшения; правки — только после одобрения
+  владельца. Автоматическая активация не настроена.
