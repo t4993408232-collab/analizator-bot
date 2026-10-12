@@ -1,0 +1,2 @@
+Source: https://github.com/debpalash/VoiceStudio @ b22de54e316d00a2df06e5c12a7a53a4209efbfd
+Installed: skills/voicestudio and skills/voicestudio-maintainer only (the 78 MB app itself is not included). Check LICENSE-NOTICE.md upstream before reuse.
