@@ -1,0 +1,2 @@
+Source: https://github.com/wheresryan22/anatomy @ be2fa9b47a7e4b05dec468be9ffc42e830c2101c (MIT).
+Generated examples/*.html omitted; rebuild with: node examples/<name>/build.mjs
