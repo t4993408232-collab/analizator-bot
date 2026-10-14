@@ -1,5 +1,5 @@
 // Acceptance checks that can run before the real screen test:
-// 1) both QR codes decode from the final frame, at full size and shrunk (a phone 3-4 m from a 55" screen sees the code
+// 1) both QR codes decode from the final frame at 1/2-1/8 size (a phone 3-4 m from a 55" screen sees the code
 //    at roughly 1/6-1/8 of its 4K size), and decode to exactly the URLs in config.json;
 // 2) the loop seam: the last frame and the first frame of the master differ no more than two neighbouring frames do.
 //   node verify.mjs
@@ -21,7 +21,7 @@ const crop = (img, x0, y0, w, h, f) => {                                    // b
 };
 const halves = [[0, 0, png.width / 2], [png.width / 2, 0, png.width / 2]];
 cfg.qr.forEach((q, k) => {
-  for (const f of [1, 4, 6, 8]) {
+  for (const f of [2, 3, 4, 6, 8]) {
     const [x0, y0, w] = halves[k], c = crop(png, x0, y0, w, png.height, f), r = jsQR(c.data, c.W, c.H);
     const pass = r?.data === q.url; ok &&= pass;
     console.log(`${pass ? 'OK  ' : 'FAIL'} QR ${k + 1} at 1/${f} size (${c.W}x${c.H}): ${r ? r.data : 'not found'}`);
