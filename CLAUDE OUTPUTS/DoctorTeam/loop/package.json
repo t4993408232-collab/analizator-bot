@@ -1,0 +1,7 @@
+{
+  "name": "doctorteam-promo-loop",
+  "private": true,
+  "type": "module",
+  "scripts": { "qr": "node qr.mjs", "render": "node render.mjs", "verify": "node verify.mjs" },
+  "dependencies": { "puppeteer-core": "24.10.0", "qrcode": "1.5.4", "jsqr": "1.4.0", "pngjs": "7.0.0" }
+}

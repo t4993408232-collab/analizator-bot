@@ -1,0 +1,7 @@
+{
+  "name": "code-video-kit",
+  "private": true,
+  "type": "module",
+  "scripts": { "render": "node render.mjs", "sheet": "node render.mjs --sheet", "beats": "node beats.mjs" },
+  "dependencies": { "puppeteer-core": "24.10.0" }
+}
