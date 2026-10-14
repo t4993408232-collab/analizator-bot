@@ -1,0 +1,19 @@
+{
+  "_comment": "Всё, что меняется без программиста: ссылки QR, подписи, слова, цифры. После правки: node qr.mjs && node render.mjs",
+  "fps": 25,
+  "duration": 14,
+  "colors": { "bg": "#000000", "white": "#f0f0f0", "grey": "#b8b8b8", "plate": "#ffffff", "code": "#000000" },
+  "font": "Jost",
+  "words": ["Конференции", "Корпоративы", "Форумы", "Бренд-зоны"],
+  "facts": [
+    { "value": 500, "suffix": "+", "label": "событий" },
+    { "value": 14, "suffix": "", "label": "лет" },
+    { "value": 5, "prefix": "Топ-", "suffix": "", "label": "АКМР" }
+  ],
+  "slogan": "Marketing around people · Маркетинг вокруг людей · ",
+  "cta": "Наведите камеру",
+  "qr": [
+    { "url": "https://t.me/eventstory_by", "title": "Eventstory", "caption": "Telegram-канал Игоря Иванова" },
+    { "url": "https://doctorteam.ru/?utm_source=screen&utm_medium=qr&utm_campaign=promo_loop", "title": "doctorteam.ru", "caption": "кейсы и заявка на событие" }
+  ]
+}
