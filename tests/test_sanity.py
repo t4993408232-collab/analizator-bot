@@ -25,6 +25,13 @@ def main() -> int:
     checks.append(("signature at end", post.rstrip().endswith(j.JOB_POST_SIGNATURE) if j.JOB_POST_SIGNATURE else True))
     checks.append(("signature has channel", "@event_hr" in j.JOB_POST_SIGNATURE or not j.CHANNEL_ID.startswith("@")))
 
+    checks.append(("creative match", j.matches_creative("Креативный директор") is True))
+    checks.append(("creative reject", j.matches_creative("Event Producer") is False))
+    checks.append(("signature main", j.channel_signature(j.CHANNEL_ID) == j.JOB_POST_SIGNATURE))
+    checks.append(("signature swap", j._with_channel_signature(post, "@creative_x").endswith("@creative_x")
+                   and "@event_hr" not in j._with_channel_signature(post, "@creative_x")))
+    checks.append(("employer pages list", isinstance(j.EMPLOYER_PAGES, list)))
+
     ok = True
     for name, passed in checks:
         print(f"[{'OK' if passed else 'FAIL'}] {name}")

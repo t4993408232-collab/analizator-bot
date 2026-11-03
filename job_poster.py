@@ -21,6 +21,7 @@ api.telegram.org (production-хост). В песочнице веб-сесси�
 import os
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone, timedelta
 
@@ -62,6 +63,25 @@ DEFAULT_SOURCE_CHANNELS = [
 JOB_SOURCE_CHANNELS = [
     c.strip() for c in os.getenv("JOB_SOURCE_CHANNELS", ",".join(DEFAULT_SOURCE_CHANNELS)).split(",")
     if c.strip()
+]
+
+# Креативный канал: второй канал публикации, в который идут ТОЛЬКО креативные
+# вакансии. Пусто = выключен. Пример: CREATIVE_CHANNEL_ID=@creative_hr
+CREATIVE_CHANNEL_ID = os.getenv("CREATIVE_CHANNEL_ID", "").strip()
+CREATIVE_KEYWORDS = [
+    "creative", "креатив", "art director", "арт-директор", "арт директор",
+    "designer", "дизайнер", "motion", "моушн", "3d", "graphic", "график",
+    "иллюстратор", "illustrator", "copywriter", "копирайтер", "видеограф",
+    "videographer", "фотограф", "photographer", "контент-дизайн", "ui/ux", "ux", "ui ",
+]
+
+# Страницы вакансий работодателей (одна вакансия на URL), через запятую.
+# Каждая страница разбирается OpenAI так же, как Telegram-пост: только факты.
+EMPLOYER_PAGES = [
+    u.strip() for u in os.getenv(
+        "EMPLOYER_PAGES",
+        "https://hr.tochka.com/vacancies/catalog/kommunikacionnyjj-dizajjner-moskva/",
+    ).split(",") if u.strip()
 ]
 
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -241,6 +261,11 @@ def fetch_vacancy(vacancy_id: str) -> dict | None:
 def matches_profile(name: str) -> bool:
     n = (name or "").lower()
     return any(kw in n for kw in PROFILE_KEYWORDS)
+
+
+def matches_creative(name: str) -> bool:
+    n = (name or "").lower()
+    return any(kw in n for kw in CREATIVE_KEYWORDS)
 
 
 CITY_RANK = {"москва": 6, "moscow": 6, "санкт-петербург": 5, "saint": 5, "спб": 5}
@@ -429,7 +454,22 @@ def generate_image(title: str) -> bytes | None:
 # Публикация в Telegram
 # --------------------------------------------------------------------------
 
-def publish(text: str, image: bytes | None) -> bool:
+def channel_signature(channel: str) -> str:
+    """Подпись в конце поста — ссылка на канал, в который публикуем."""
+    if channel == CHANNEL_ID:
+        return JOB_POST_SIGNATURE
+    return f"📣 Подписаться: {channel}" if channel.startswith("@") else ""
+
+
+def _with_channel_signature(text: str, channel: str) -> str:
+    """Заменяет подпись основного канала на подпись целевого канала."""
+    if JOB_POST_SIGNATURE and text.endswith(JOB_POST_SIGNATURE):
+        text = text[: -len(JOB_POST_SIGNATURE)].rstrip("\n")
+    sig = channel_signature(channel)
+    return f"{text}\n\n{sig}" if sig else text
+
+
+def publish(text: str, image: bytes | None, channel: str = CHANNEL_ID) -> bool:
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN не задан — публикация невозможна")
         return False
@@ -440,25 +480,25 @@ def publish(text: str, image: bytes | None) -> bool:
                 r = requests.post(
                     f"{TG_API}/sendPhoto",
                     files={"photo": ("job.png", image, "image/png")},
-                    data={"chat_id": CHANNEL_ID, "caption": text},
+                    data={"chat_id": channel, "caption": text},
                     timeout=60,
                 )
             else:
                 requests.post(
                     f"{TG_API}/sendPhoto",
                     files={"photo": ("job.png", image, "image/png")},
-                    data={"chat_id": CHANNEL_ID},
+                    data={"chat_id": channel},
                     timeout=60,
                 ).raise_for_status()
                 r = requests.post(
                     f"{TG_API}/sendMessage",
-                    json={"chat_id": CHANNEL_ID, "text": text, "disable_web_page_preview": False},
+                    json={"chat_id": channel, "text": text, "disable_web_page_preview": False},
                     timeout=30,
                 )
         else:
             r = requests.post(
                 f"{TG_API}/sendMessage",
-                json={"chat_id": CHANNEL_ID, "text": text, "disable_web_page_preview": False},
+                json={"chat_id": channel, "text": text, "disable_web_page_preview": False},
                 timeout=30,
             )
         r.raise_for_status()
@@ -512,15 +552,35 @@ def _parse_tg_vacancy(msg: dict) -> dict | None:
     Берёт ТОЛЬКО факты из текста. Контакт = из поста, иначе ссылка на пост.
     Возвращает {"text", "title"} или None, если это не вакансия/не по теме.
     """
-    if not OPENAI_API_KEY:
-        return None
     text = msg.get("text", "")
     if not matches_profile(text):            # дешёвый предфильтр по ключевым словам
+        return None
+    return _llm_vacancy(text, msg.get("links") or [], msg.get("permalink", ""))
+
+
+def _fetch_page_text(url: str) -> str:
+    """Текст страницы вакансии работодателя. Пусто — если страница недоступна."""
+    from bs4 import BeautifulSoup
+    try:
+        r = requests.get(url, headers={"User-Agent": HH_USER_AGENT}, timeout=30)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        logger.info("Страница вакансии недоступна %s: %s", url, e)
+        return ""
+    soup = BeautifulSoup(r.text, "html.parser")
+    for tag in soup(["script", "style", "noscript", "svg"]):
+        tag.decompose()
+    return re.sub(r"\s+", " ", soup.get_text(" ")).strip()
+
+
+def _llm_vacancy(text: str, links: list, fallback_link: str) -> dict | None:
+    """Общий разбор текста вакансии (Telegram-пост или страница работодателя)."""
+    if not OPENAI_API_KEY or not text.strip():
         return None
     try:
         from openai import OpenAI
         client = OpenAI(api_key=OPENAI_API_KEY)
-        links = ", ".join(msg.get("links") or []) or "нет"
+        links = ", ".join(links) or "нет"
         prompt = (
             "Перед тобой пост из Telegram-канала вакансий. Верни СТРОГО JSON:\n"
             '{"is_vacancy": bool, "on_topic": bool, "title": str, "company": str, '
@@ -547,7 +607,7 @@ def _parse_tg_vacancy(msg: dict) -> dict | None:
     title = (d.get("title") or "").strip()
     if not title:
         return None
-    apply_link = (d.get("contact") or "").strip() or msg.get("permalink", "")
+    apply_link = (d.get("contact") or "").strip() or fallback_link
     post = render_template(
         title,
         (d.get("company") or "—").strip(),
@@ -561,7 +621,7 @@ def _parse_tg_vacancy(msg: dict) -> dict | None:
     return {"text": post, "title": title}
 
 
-def telegram_candidates(seen: set) -> list:
+def telegram_candidates(seen: set, ns: str = "") -> list:
     """Собирает готовые посты из всех настроенных каналов. Дедуп по permalink."""
     if not (ENABLE_TELEGRAM_SOURCE and JOB_SOURCE_CHANNELS):
         return []
@@ -571,7 +631,7 @@ def telegram_candidates(seen: set) -> list:
         for msg in telegram_source.fetch_channel_messages(channel):
             key = f"tg:{msg['channel']}/{msg['post_id']}"
             DAILY["found"] += 1
-            if key in seen:
+            if ns + key in seen:
                 DAILY["reasons"]["dup"] += 1
                 DAILY["rejected"] += 1
                 continue
@@ -587,17 +647,48 @@ def telegram_candidates(seen: set) -> list:
     return out
 
 
+def employer_candidates(seen: set, ns: str = "") -> list:
+    """Страницы вакансий работодателей (EMPLOYER_PAGES). Ссылка = сам URL страницы."""
+    out = []
+    for url in EMPLOYER_PAGES:
+        key = f"page:{url}"
+        DAILY["found"] += 1
+        if ns + key in seen:
+            DAILY["reasons"]["dup"] += 1
+            DAILY["rejected"] += 1
+            continue
+        text = _fetch_page_text(url)
+        if not text:
+            DAILY["reasons"]["closed"] += 1
+            DAILY["rejected"] += 1
+            continue
+        parsed = _llm_vacancy(text[:8000], [url], url)
+        if not parsed:
+            DAILY["reasons"]["offtopic"] += 1
+            DAILY["rejected"] += 1
+            continue
+        out.append({"key": key, "score": 10.0,
+                    "text": parsed["text"], "title": parsed["title"]})
+    return out
+
+
 # --------------------------------------------------------------------------
-# Главная операция: опубликовать следующую лучшую вакансию (1 за слот)
+# Публикация
 # --------------------------------------------------------------------------
 
-def publish_next() -> dict:
-    """Один цикл: найти (hh + Telegram) → отфильтровать → выбрать лучшую → опубликовать."""
+def publish_next(channel: str = CHANNEL_ID, creative_only: bool = False) -> dict:
+    """
+    Один цикл: найти (hh + Telegram + страницы работодателей) → отфильтровать →
+    выбрать лучшую → опубликовать в channel.
+    creative_only=True — только креативные вакансии; антидубль отдельный (префикс
+    "creative|"), чтобы вакансия из основного канала не блокировала креативный.
+    """
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if DAILY["date"] != today:
         _reset_daily(today)
 
     seen = load_seen()
+    ns = "creative|" if creative_only else ""
 
     # --- источник 1: hh.ru ---
     raw = search_vacancies()
@@ -605,7 +696,7 @@ def publish_next() -> dict:
     hh_candidates = []
     for v in raw:
         key = f"hh:{v['id']}"
-        if key in seen:
+        if ns + key in seen:
             DAILY["reasons"]["dup"] += 1
             DAILY["rejected"] += 1
             continue
@@ -615,11 +706,16 @@ def publish_next() -> dict:
             continue
         hh_candidates.append({"key": key, "score": priority_score(v), "hh": v})
 
-    # --- источник 2: Telegram-каналы ---
-    tg_candidates = telegram_candidates(seen)
+    # --- источник 2: Telegram-каналы; источник 3: страницы работодателей ---
+    tg_candidates = telegram_candidates(seen, ns)
+    page_candidates = employer_candidates(seen, ns)
 
     # Общая очередь по приоритету
-    queue = sorted(hh_candidates + tg_candidates, key=lambda c: c["score"], reverse=True)
+    queue = sorted(hh_candidates + tg_candidates + page_candidates,
+                   key=lambda c: c["score"], reverse=True)
+    if creative_only:
+        queue = [c for c in queue
+                 if matches_creative(c["hh"]["name"] if "hh" in c else c["title"])]
 
     for c in queue:
         if "hh" in c:                         # hh: проверяем, что вакансия жива
@@ -627,21 +723,23 @@ def publish_next() -> dict:
             if full is None:
                 DAILY["reasons"]["closed"] += 1
                 DAILY["rejected"] += 1
-                seen.add(c["key"])
+                seen.add(ns + c["key"])
                 continue
             text = build_post(full)
             title = full.get("name", "")
-        else:                                 # telegram: пост уже готов
+        else:                                 # telegram / страница: пост уже готов
             text, title = c["text"], c["title"]
 
+        text = _with_channel_signature(text, channel)
         image = generate_image(title)
-        if publish(text, image):
-            seen.add(c["key"])
+        if publish(text, image, channel):
+            seen.add(ns + c["key"])
             save_seen(seen)
             DAILY["published"] += 1
-            logger.info("Опубликовано (%s): %s", c["key"], title)
-            return {"published": True, "key": c["key"], "title": title}
-        return {"published": False, "error": "telegram"}
+            logger.info("Опубликовано в %s (%s): %s", channel, c["key"], title)
+            return {"published": True, "channel": channel, "key": c["key"], "title": title}
+        return {"published": False, "channel": channel, "error": "telegram"}
 
     save_seen(seen)
-    return {"published": False, "reason": "нет новых подходящих вакансий"}
+    return {"published": False, "channel": channel,
+            "reason": "нет новых подходящих вакансий"}

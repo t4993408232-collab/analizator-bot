@@ -76,6 +76,13 @@ def start_scheduler():
         sched.add_job(job_poster.publish_next,
                       CronTrigger(hour=",".join(map(str, PUBLISH_HOURS)), minute=0),
                       id="job_poster_publish", max_instances=1, coalesce=True)
+        # Креативный канал (только креативные вакансии), если задан CREATIVE_CHANNEL_ID.
+        # Минута 30 — чтобы не совпадать с основным запуском по времени.
+        if job_poster.CREATIVE_CHANNEL_ID:
+            sched.add_job(
+                lambda: job_poster.publish_next(job_poster.CREATIVE_CHANNEL_ID, creative_only=True),
+                CronTrigger(hour=",".join(map(str, PUBLISH_HOURS)), minute=30),
+                id="job_poster_creative", max_instances=1, coalesce=True)
         # Отчёт в конце дня
         sched.add_job(lambda: job_poster.send_report(job_poster.DAILY),
                       CronTrigger(hour=max(PUBLISH_HOURS), minute=45),
@@ -138,11 +145,19 @@ def tender_queue():
 
 @app.post("/job-poster/run")
 async def job_poster_run(request: Request):
-    """Ручной запуск одного цикла публикации. Требует JOB_POSTER_TOKEN."""
+    """
+    Ручной запуск одного цикла публикации. Требует JOB_POSTER_TOKEN.
+    ?creative=1 — цикл для креативного канала (CREATIVE_CHANNEL_ID).
+    """
     if JOB_POSTER_TOKEN:
         if request.headers.get("X-Token") != JOB_POSTER_TOKEN:
             raise HTTPException(status_code=403, detail="forbidden")
-    result = job_poster.publish_next()
+    if request.query_params.get("creative") == "1":
+        if not job_poster.CREATIVE_CHANNEL_ID:
+            raise HTTPException(status_code=400, detail="CREATIVE_CHANNEL_ID не задан")
+        result = job_poster.publish_next(job_poster.CREATIVE_CHANNEL_ID, creative_only=True)
+    else:
+        result = job_poster.publish_next()
     return {"ok": True, "result": result}
 
 @app.post("/webhook")
