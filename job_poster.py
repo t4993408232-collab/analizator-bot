@@ -34,6 +34,12 @@ logger = logging.getLogger("job_poster")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@event_hr")          # куда публикуем
+# Подпись канала в конце каждой вакансии. По умолчанию — ссылка на сам канал
+# (только для @username). Переопределить: JOB_POST_SIGNATURE; пусто = без подписи.
+JOB_POST_SIGNATURE = os.getenv(
+    "JOB_POST_SIGNATURE",
+    f"📣 Подписаться: {CHANNEL_ID}" if CHANNEL_ID.startswith("@") else "",
+)
 OWNER_CHAT_ID = os.getenv("OWNER_CHAT_ID")                 # кому шлём отчёт
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
@@ -317,6 +323,8 @@ def render_template(title, employer, city, salary, duties, reqs, plus, apply_lin
         lines += ["", "⭐ Будет плюсом"]
         lines += [f"• {p}" for p in plus]
     lines += ["", "🔗 Откликнуться", apply_link, "", _hashtags(title)]
+    if JOB_POST_SIGNATURE:
+        lines += ["", JOB_POST_SIGNATURE]
     return "\n".join(lines)
 
 

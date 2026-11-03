@@ -22,6 +22,8 @@ def main() -> int:
     checks.append(("template has title", post.startswith("🔥 T")))
     checks.append(("template has apply", "https://example.com" in post))
     checks.append(("channels configured", len(j.JOB_SOURCE_CHANNELS) >= 1))
+    checks.append(("signature at end", post.rstrip().endswith(j.JOB_POST_SIGNATURE) if j.JOB_POST_SIGNATURE else True))
+    checks.append(("signature has channel", "@event_hr" in j.JOB_POST_SIGNATURE or not j.CHANNEL_ID.startswith("@")))
 
     ok = True
     for name, passed in checks:
